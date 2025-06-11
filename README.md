@@ -1,0 +1,2 @@
+# StellarBladeModManager
+基于虚幻引擎游戏剑星制作的MOD管理器，可灵活使用
