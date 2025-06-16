@@ -46,4 +46,37 @@ dist/
 *.gif
 *.ico
 *.svg
-!icons/*.svg  # 保留icons目录下的svg文件 
+!icons/*.svg  # 保留icons目录下的svg文件
+
+# 打包/临时/日志/备份
+build/
+dist/
+release/
+temp_*/
+*.log
+logs/
+modbackup/
+__pycache__/
+*.pyc
+*.pyo
+*.bak
+*.tmp
+*.swp
+.DS_Store
+
+# IDE/系统
+.vscode/
+.idea/
+*.iml
+
+# 旧版本/历史目录
+1.51/
+1.6.1/
+unr_*/
+*.old
+
+# 本地脚本
+build_fixed.py
+build.py
+download_unrar.py
+backup_to_github.py 
