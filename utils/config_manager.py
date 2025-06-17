@@ -45,85 +45,69 @@ class ConfigManager:
         self.config['mods_path_notified'] = False
         
     def _load_config(self):
-        """加载配置文件"""
+        """加载配置文件，并处理旧格式到新格式的转换"""
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     self.config = json.load(f)
-                    print("[调试] _load_config: 成功加载配置文件")
+                print("[调试] _load_config: 成功加载配置文件")
+
+                # --- 兼容性处理：将旧的列表格式转换为新的字典格式 ---
+                if isinstance(self.config.get("categories"), list):
+                    print("[调试] _load_config: 检测到旧版分类列表，正在转换为新版字典格式...")
+                    old_categories_list = self.config["categories"]
+                    new_categories_dict = {}
+                    for cat in old_categories_list:
+                        if '/' in cat:
+                            main_cat, sub_cat = cat.split('/', 1)
+                            if main_cat not in new_categories_dict:
+                                new_categories_dict[main_cat] = []
+                            if sub_cat not in new_categories_dict[main_cat]:
+                                new_categories_dict[main_cat].append(sub_cat)
+                        else:
+                            if cat not in new_categories_dict:
+                                new_categories_dict[cat] = []
                     
-                    # 加载默认分类名称，如果存在
-                    if "default_category_name" in self.config:
-                        self.default_category_name = self.config["default_category_name"]
-                        print(f"[调试] _load_config: 加载默认分类名称: {self.default_category_name}")
-                    
-                    # 加载分类时间戳，如果存在
-                    if "category_timestamps" in self.config:
-                        self.category_timestamps = self.config["category_timestamps"]
-                    else:
-                        # 初始化分类时间戳
-                        self.category_timestamps = {}
-                        # 为现有分类生成时间戳
-                        for index, cat in enumerate(self.get_categories()):
-                            if cat == self.default_category_name:
-                                self.category_timestamps[cat] = 0  # 默认分类永远是最早的
-                            else:
-                                # 为其他分类生成递增的时间戳，确保顺序一致
-                                self.category_timestamps[cat] = int(time.time()) + index
-                                
-                        # 保存时间戳到配置
-                        self.config["category_timestamps"] = self.category_timestamps
-                        self._save_config()
+                    # 确保默认分类存在
+                    if self.default_category_name not in new_categories_dict:
+                        new_categories_dict[self.default_category_name] = []
+                        
+                    self.config["categories"] = new_categories_dict
+                    print(f"[调试] _load_config: 转换完成，新的分类结构: {self.config['categories']}")
+                    self._save_config()  # 保存转换后的新格式
+
             else:
-                # 创建默认配置
+                # 创建默认配置 (使用新的字典格式)
                 self.config = {
                     "language": "zh",
-                    "categories": [self.default_category_name],
-                    "category_timestamps": {self.default_category_name: 0},
-                    "default_category_name": self.default_category_name,
+                    "categories": {self.default_category_name: []},
                     "mods_path": "",
                     "backup_path": "",
                     "game_path": "",
                     "mods": {}
                 }
-                self.category_timestamps = {self.default_category_name: 0}
                 print("[调试] _load_config: 未找到配置文件，创建默认配置")
                 self._save_config()
         except Exception as e:
             print(f"[错误] _load_config: 加载配置文件失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # 创建默认配置
+            # 出错时也使用新的字典格式创建默认配置
             self.config = {
                 "language": "zh",
-                "categories": [self.default_category_name],
-                "category_timestamps": {self.default_category_name: 0},
-                "default_category_name": self.default_category_name,
+                "categories": {self.default_category_name: []},
                 "mods_path": "",
                 "backup_path": "",
                 "game_path": "",
                 "mods": {}
             }
-            self.category_timestamps = {self.default_category_name: 0}
             self._save_config()
 
     def _save_config(self):
         """保存配置到文件"""
-        # 保存分类时间戳到配置
-        self.config["category_timestamps"] = self.category_timestamps
-        
-        # 保存默认分类名称
-        self.config["default_category_name"] = self.default_category_name
-        
         try:
-            # 保存配置
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=4)
-                print(f"[调试] _save_config: 配置已保存到 {self.config_file}")
         except Exception as e:
             print(f"[错误] _save_config: 保存配置文件失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
             
     def is_initialized(self):
         """检查是否已初始化"""
@@ -170,199 +154,125 @@ class ConfigManager:
         return self.config.get("backup_path", "")
         
     def get_categories(self):
-        """获取所有分类，按创建时间排序"""
-        categories = self.config.get("categories", [self.default_category_name])
+        """获取所有分类，返回一个字典 {'main': ['sub1', 'sub2']}"""
+        # 确保返回的是字典格式
+        categories = self.config.get("categories", {})
+        if not isinstance(categories, dict):
+             # 如果由于某些原因格式仍然不正确，强制转换
+            print("[警告] get_categories: 分类格式不正确，强制转换为空字典。")
+            return {self.default_category_name: []}
         
         # 确保默认分类存在
         if self.default_category_name not in categories:
-            categories.insert(0, self.default_category_name)
+            categories[self.default_category_name] = []
             
-        # 确保所有分类都有时间戳
-        for cat in categories:
-            if cat not in self.category_timestamps:
-                # 如果是默认分类，设置为最早时间戳
-                if cat == self.default_category_name:
-                    self.category_timestamps[cat] = 0
-                else:
-                    # 为其他分类设置当前时间戳
-                    self.category_timestamps[cat] = int(time.time())
+        return categories
         
-        # 按时间戳排序分类
-        try:
-            sorted_categories = sorted(categories, key=lambda x: self.category_timestamps.get(x, int(time.time())))
-            return sorted_categories
-        except Exception as e:
-            print(f"[错误] get_categories: 排序分类失败: {e}")
-            return categories
+    def set_categories(self, categories_dict):
+        """设置分类列表，必须是字典"""
+        if not isinstance(categories_dict, dict):
+            raise TypeError("set_categories需要一个字典参数。")
         
-    def set_categories(self, categories):
-        """设置分类列表"""
         # 确保默认分类始终存在
-        if self.default_category_name not in categories:
-            categories.insert(0, self.default_category_name)
-        
-        # 如果"默认分类"存在但不是当前默认分类名称，需要更新MOD的分类
-        if "默认分类" in categories and "默认分类" != self.default_category_name:
-            # 将所有使用"默认分类"的MOD更新为当前默认分类名称
-            mods = self.config.get("mods", {})
-            updated = 0
-            for mod_id, mod_info in mods.items():
-                if mod_info.get("category") == "默认分类":
-                    mod_info["category"] = self.default_category_name
-                    self.config["mods"][mod_id] = mod_info
-                    updated += 1
+        if self.default_category_name not in categories_dict:
+            categories_dict[self.default_category_name] = []
             
-            if updated:
-                print(f"[调试] set_categories: 更新了 {updated} 个MOD的分类从 默认分类 到 {self.default_category_name}")
-            
-            # 从分类列表中移除旧的"默认分类"
-            categories = [cat for cat in categories if cat != "默认分类"]
-            
-        # 保存原有分类列表，用于检测删除的分类
-        old_categories = set(self.config.get("categories", [self.default_category_name]))
-        new_categories = set(categories)
-        
-        # 检测已删除的分类，清理它们的时间戳
-        deleted_categories = old_categories - new_categories
-        for cat in deleted_categories:
-            if cat in self.category_timestamps and cat != self.default_category_name:
-                del self.category_timestamps[cat]
-                print(f"[调试] set_categories: 删除分类时间戳: {cat}")
-                
-        # 更新分类时间戳，为新添加的分类创建时间戳
-        current_time = int(time.time())
-        for cat in categories:
-            if cat not in self.category_timestamps:
-                self.category_timestamps[cat] = current_time
-                current_time += 1
-                print(f"[调试] set_categories: 新增分类时间戳: {cat} = {current_time}")
-                
-        # 确保默认分类的时间戳是最小的
-        if self.default_category_name in self.category_timestamps:
-            self.category_timestamps[self.default_category_name] = 0
-            
-        # 确保默认分类始终在第一位
-        if self.default_category_name in categories:
-            categories.remove(self.default_category_name)
-            categories.insert(0, self.default_category_name)
-                
-        # 按时间戳排序后保存
-        sorted_categories = sorted(categories, key=lambda x: self.category_timestamps.get(x, current_time))
-        self.config["categories"] = sorted_categories
+        self.config["categories"] = categories_dict
         self._save_config()
-        print(f"[调试] set_categories: 保存排序后的分类: {sorted_categories}")
+                
+    def add_category(self, main_category, sub_category=None):
+        """添加新分类或子分类"""
+        categories = self.get_categories()
         
-    def add_category(self, name):
-        """添加新分类"""
-        if name not in self.config["categories"]:
-            # 记录创建时间戳
-            self.category_timestamps[name] = int(time.time())
+        if sub_category: # 添加子分类
+            if main_category not in categories:
+                raise ValueError(f"主分类 '{main_category}' 不存在。")
+            if sub_category in categories[main_category]:
+                raise ValueError(f"子分类 '{sub_category}' 已在 '{main_category}' 中存在。")
+            categories[main_category].append(sub_category)
+        else: # 添加主分类
+            if main_category in categories:
+                raise ValueError(f"主分类 '{main_category}' 已存在。")
+            categories[main_category] = []
             
-            # 确保默认分类的时间戳是最小的
-            self.category_timestamps["默认分类"] = 0
-            
-            # 添加分类到列表
-            categories = self.config.get("categories", ["默认分类"])
-            categories.append(name)
-            
-            # 按时间戳排序
-            sorted_categories = sorted(categories, key=lambda x: self.category_timestamps.get(x, 0))
-            self.config["categories"] = sorted_categories
-            self._save_config()
-            
+        self.set_categories(categories)
+    
     def rename_category(self, old_name, new_name):
-        """重命名分类，并同步所有MOD的category字段"""
-        print(f"[调试] rename_category: 开始重命名分类 {old_name} -> {new_name}")
-        print(f"[调试] rename_category: 当前分类列表: {self.config['categories']}")
-        print(f"[调试] rename_category: 当前默认分类名称: {self.default_category_name}")
+        """重命名主分类或子分类"""
+        categories = self.get_categories()
         
-        if old_name in self.config["categories"] and new_name not in self.config["categories"]:
-            idx = self.config["categories"].index(old_name)
-            print(f"[调试] rename_category: 找到分类 {old_name} 在索引 {idx}")
-            
-            # 如果是重命名默认分类，确保新名称成为新的默认分类
+        # 检查新名称是否已存在
+        if new_name in categories or any(new_name in subs for subs in categories.values()):
+             raise ValueError(f"分类名称 '{new_name}' 已存在。")
+
+        # 重命名主分类
+        if old_name in categories:
             if old_name == self.default_category_name:
-                print(f"[调试] rename_category: 正在重命名默认分类 {old_name}")
-                
-                # 修改所有使用默认分类的MOD到新名称
-                mods = self.config.get("mods", {})
-                updated = 0
-                for mod_id, mod_info in mods.items():
-                    if mod_info.get("category") == old_name:
-                        mod_info["category"] = new_name
-                        self.config["mods"][mod_id] = mod_info
-                        updated += 1
-                        print(f"[调试] rename_category: 更新MOD {mod_id} 分类从 {old_name} 到 {new_name}")
-                    # 同时处理"默认分类"的特殊情况
-                    elif mod_info.get("category") == "默认分类" and old_name == self.default_category_name:
-                        mod_info["category"] = new_name
-                        self.config["mods"][mod_id] = mod_info
-                        updated += 1
-                        print(f"[调试] rename_category: 更新MOD {mod_id} 分类从 默认分类 到 {new_name}")
-                
-                if updated:
-                    print(f"[调试] rename_category: 同步更新了{updated}个MOD的分类字段")
-                
-                # 将默认分类名称改为新名称
-                self.config["categories"][idx] = new_name
-                print(f"[调试] rename_category: 在分类列表中将 {old_name} 替换为 {new_name}")
-                
-                # 更新时间戳，确保新名称的时间戳是最早的（0），保持在第一位
-                self.category_timestamps[new_name] = 0
-                print(f"[调试] rename_category: 设置 {new_name} 的时间戳为 0")
-                
-                # 删除旧的默认分类时间戳
-                if self.default_category_name in self.category_timestamps and self.default_category_name != new_name:
-                    del self.category_timestamps[self.default_category_name]
-                    print(f"[调试] rename_category: 删除旧默认分类 {self.default_category_name} 的时间戳")
-                
-                # 标记新名称为默认分类（用于set_categories方法）
-                self.default_category_name = new_name
-                print(f"[调试] rename_category: 默认分类名称已更新为 {new_name}")
-                
-                # 确保默认分类不会被重新添加
-                print(f"[调试] rename_category: 修改后的分类列表: {self.config['categories']}")
-                print(f"[调试] rename_category: 修改后的时间戳: {self.category_timestamps}")
-            else:
-                # 正常分类重命名
-                self.config["categories"][idx] = new_name
-                
-                # 同步所有MOD的category字段
-                mods = self.config.get("mods", {})
-                updated = 0
-                for mod_id, mod_info in mods.items():
-                    if mod_info.get("category") == old_name:
-                        mod_info["category"] = new_name
-                        updated += 1
-                
-                if updated:
-                    print(f"[调试] rename_category: 同步更新了{updated}个MOD的分类字段")
-                
-                # 更新时间戳
-                self.category_timestamps[new_name] = self.category_timestamps.get(old_name, 0)
-                # 删除旧分类的时间戳
-                if old_name in self.category_timestamps:
-                    del self.category_timestamps[old_name]
-                    
-            self._save_config()
-            
-    def delete_category(self, name):
-        """删除分类"""
-        if name != "默认分类" and name in self.config["categories"]:
-            self.config["categories"].remove(name)
-            
-            # 删除分类的时间戳
-            if name in self.category_timestamps:
-                del self.category_timestamps[name]
-                
-            self._save_config()
-            
-    def get_mods(self):
-        """获取所有MOD信息"""
-        return self.config.get("mods", {})
+                raise ValueError("不能重命名默认分类。")
+            # 更新分类字典
+            categories[new_name] = categories.pop(old_name)
+            # 更新所有MOD的分类
+            self.update_mod_categories(lambda cat: cat.replace(old_name, new_name, 1))
+        # 重命名子分类
+        else:
+            found = False
+            for main_cat, sub_cats in categories.items():
+                if old_name in sub_cats:
+                    sub_cats[sub_cats.index(old_name)] = new_name
+                    # 更新MOD分类
+                    old_full = f"{main_cat}/{old_name}"
+                    new_full = f"{main_cat}/{new_name}"
+                    self.update_mod_categories(lambda cat: cat.replace(old_full, new_full, 1))
+                    found = True
+                    break
+            if not found:
+                raise ValueError(f"找不到分类 '{old_name}'。")
+
+        self.set_categories(categories)
+
+    def delete_category(self, category_name, move_to_parent=False):
+        """删除主分类或子分类"""
+        categories = self.get_categories()
         
+        # 删除主分类
+        if category_name in categories:
+            if category_name == self.default_category_name:
+                raise ValueError("不能删除默认分类。")
+            
+            del categories[category_name]
+            # 将MOD移动到默认分类
+            self.update_mod_categories(
+                lambda cat: self.default_category_name if cat.startswith(f"{category_name}/") or cat == category_name else cat
+            )
+        # 删除子分类
+        else:
+            found = False
+            for main_cat, sub_cats in categories.items():
+                if category_name in sub_cats:
+                    sub_cats.remove(category_name)
+                    # 移动MOD
+                    old_full = f"{main_cat}/{category_name}"
+                    target_cat = main_cat if move_to_parent else self.default_category_name
+                    self.update_mod_categories(lambda cat: target_cat if cat == old_full else cat)
+                    found = True
+                    break
+            if not found:
+                raise ValueError(f"找不到分类 '{category_name}'。")
+
+        self.set_categories(categories)
+
+    def get_mods(self):
+        """获取所有MOD的信息"""
+        return self.config.get("mods", {})
+
+    def get_mod(self, mod_id):
+        """获取单个MOD的信息"""
+        return self.config.get("mods", {}).get(mod_id)
+
     def add_mod(self, mod_id, mod_info):
-        """添加MOD信息，自动补充导入日期"""
+        """添加或更新MOD信息"""
+        if "mods" not in self.config:
+            self.config["mods"] = {}
         if 'import_date' not in mod_info:
             mod_info['import_date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         # 确保使用mod_info中的name作为MOD ID
@@ -447,11 +357,13 @@ class ConfigManager:
                                 preview_ext = os.path.splitext(preview_image)[1]
                                 new_preview_path = new_backup_dir / f"preview{preview_ext}"
                                 try:
+                                    if not new_backup_dir.exists():
+                                        new_backup_dir.mkdir(parents=True, exist_ok=True)
                                     shutil.copy2(preview_image, new_preview_path)
-                                    print(f"[调试] update_mod: 复制预览图到新备份目录: {preview_image} -> {new_preview_path}")
                                     mod_info['preview_image'] = str(new_preview_path)
+                                    print(f"[调试] update_mod: 复制预览图到新备份目录: {new_preview_path}")
                                 except Exception as e:
-                                    print(f"[警告] update_mod: 复制预览图失败: {e}")
+                                    print(f"[警告] update_mod: 复制预览图到新备份目录失败: {e}")
                 
                 # 复制MOD信息到新ID
                 self.config["mods"][new_name] = mod_info.copy()
@@ -945,84 +857,62 @@ class ConfigManager:
             print(f"[调试] restore_mod: 还原失败 {str(e)}")
             raise ValueError(f"MOD还原失败: {str(e)}")
 
-    def update_mod_categories(self, valid_categories=None):
+    def update_mod_categories(self, update_func_or_valid_list):
         """更新所有MOD的分类信息，确保它们的分类路径正确"""
-        # 如果未提供有效分类列表，使用当前配置的分类列表
-        if valid_categories is None:
-            valid_categories = set(self.get_categories())
-        else:
-            # 确保valid_categories是集合类型，而不是列表
-            valid_categories = set(valid_categories)
-            
-        # 确保默认分类始终存在
-        valid_categories.add(self.default_category_name)
-            
-        print(f"[调试] config_manager.update_mod_categories: 有效分类列表: {valid_categories}")
-        
-        # 更新MOD的分类信息
         mods = self.get_mods()
         updated_count = 0
-        default_count = 0
+
+        # 如果提供了更新函数
+        if callable(update_func_or_valid_list):
+            update_func = update_func_or_valid_list
+            for mod_id, mod_info in mods.items():
+                current_category = mod_info.get('category', self.default_category_name)
+                new_category = update_func(current_category)
+                if new_category != current_category:
+                    mod_info['category'] = new_category
+                    self.update_mod(mod_id, mod_info)
+                    updated_count += 1
+            
+            if updated_count > 0:
+                print(f"[调试] update_mod_categories: 使用函数更新了 {updated_count} 个MOD的分类信息")
+            return updated_count
+
+        # 如果提供了有效分类列表
+        valid_categories = set(update_func_or_valid_list) if update_func_or_valid_list is not None else set()
+        if not valid_categories:
+            # 如果没有提供有效分类，则从现有分类构建
+            categories_dict = self.get_categories()
+            for cat, subs in categories_dict.items():
+                valid_categories.add(cat)
+                for sub in subs:
+                    valid_categories.add(f"{cat}/{sub}")
         
-        # 先检查默认分类相关的特殊情况
+        valid_categories.add(self.default_category_name)
+        print(f"[调试] update_mod_categories: 有效分类列表: {valid_categories}")
+
         for mod_id, mod_info in mods.items():
             current_category = mod_info.get('category', self.default_category_name)
-            
-            # 特殊处理默认分类作为子分类的情况
-            if '/' in current_category and current_category.endswith('/' + self.default_category_name):
-                # 将其还原为顶级默认分类
-                old_category = current_category
-                mod_info['category'] = self.default_category_name
-                self.update_mod(mod_id, mod_info)
-                print(f"[调试] config_manager.update_mod_categories: 修正 MOD {mod_id} 的分类从 {old_category} 为顶级默认分类")
-                updated_count += 1
-                default_count += 1
-        
-        # 处理常规分类变更情况
-        for mod_id, mod_info in mods.items():
-            current_category = mod_info.get('category', self.default_category_name)
-            
-            # 如果当前分类有效，不做修改
-            if current_category in valid_categories:
-                continue
+            if current_category not in valid_categories:
+                # 如果分类不存在，检查父级分类是否存在
+                parent_category = None
+                if '/' in current_category:
+                    parent_name = current_category.split('/', 1)[0]
+                    if parent_name in valid_categories:
+                        parent_category = parent_name
                 
-            # 如果分类不存在，检查父级分类是否存在
-            parent_category = None
-            if '/' in current_category:
-                parent_name = current_category.split('/', 1)[0]
-                if parent_name in valid_categories:
-                    parent_category = parent_name
-            
-            # 分类变更处理
-            old_category = current_category
-            if parent_category:
-                mod_info['category'] = parent_category
-                print(f"[调试] config_manager.update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为父级分类 {parent_category}")
-            else:
-                mod_info['category'] = self.default_category_name
-                print(f"[调试] config_manager.update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为默认分类 {self.default_category_name}")
-                default_count += 1
-            
-            self.update_mod(mod_id, mod_info)
-            updated_count += 1
+                # 如果父级分类存在，将MOD移至父级分类；否则移至默认分类
+                old_category = current_category
+                if parent_category:
+                    mod_info['category'] = parent_category
+                    print(f"[调试] update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为父级分类 {parent_category}")
+                else:
+                    mod_info['category'] = self.default_category_name
+                    print(f"[调试] update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为默认分类")
+                
+                self.update_mod(mod_id, mod_info)
+                updated_count += 1
         
-        # 输出详细日志
         if updated_count > 0:
-            print(f"[调试] config_manager.update_mod_categories: 已更新 {updated_count} 个MOD的分类信息，其中 {default_count} 个移至默认分类")
-        
-        # 确保配置中的categories列表只包含实际有效的分类，不添加新分类
-        # 将传入的valid_categories视为权威来源，而不是添加新分类
-        sorted_categories = list(valid_categories)
-        
-        # 确保默认分类在列表的第一位
-        if self.default_category_name in sorted_categories:
-            sorted_categories.remove(self.default_category_name)
-        sorted_categories.insert(0, self.default_category_name)
-        
-        # 设置分类列表，但不创建新的分类
-        print(f"[调试] config_manager.update_mod_categories: 更新配置中的分类列表: {sorted_categories}")
-        # 不使用set_categories，而是直接更新config，避免创建新分类
-        self.config["categories"] = sorted_categories
-        self._save_config()
+            print(f"[调试] update_mod_categories: 已更新 {updated_count} 个MOD的分类信息")
         
         return updated_count 

@@ -1,8 +1,11 @@
 {
     "language": "zh",
-    "categories": [
-        "默认分类"
-    ],
+    "categories": {
+        "默认分类": [],
+        "2": [],
+        "3": [],
+        "4": []
+    },
     "category_timestamps": {
         "默认分类": 0
     },

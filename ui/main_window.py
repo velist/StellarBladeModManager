@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QFrame, QSplitter, QDialog, QLineEdit, QTextEdit,
     QDialogButtonBox, QFormLayout, QToolBar, QToolButton,
     QStatusBar, QProgressBar, QListWidget, QListWidgetItem,
-    QScrollArea, QAbstractItemView, QCheckBox, QProgressDialog
+    QScrollArea, QAbstractItemView, QCheckBox
 )
 from PySide6.QtCore import Qt, QSize, Signal, QThread, QMimeData, QPoint, QByteArray
 from PySide6.QtGui import QAction, QIcon, QPixmap, QFont, QImage, QDrag, QPainter
@@ -105,51 +105,21 @@ class ModInfoDialog(QDialog):
 
 class ImportModThread(QThread):
     finished = Signal(object, str)  # 修改为接收任何类型的结果（单个MOD或MOD列表）
-    
     def __init__(self, mod_manager, file_path):
         super().__init__()
         self.mod_manager = mod_manager
         self.file_path = file_path
-    
+        self.result = None
+        self.error = None
     def run(self):
-        """在单独线程中执行MOD导入过程"""
         try:
             mod_info = self.mod_manager.import_mod(self.file_path)
-            self.finished.emit(mod_info, "")
+            self.result = mod_info
+            self.error = None
         except Exception as e:
-            # 捕获所有异常，并获取详细的错误信息
-            error_msg = str(e)
-            import traceback
-            trace_info = traceback.format_exc()
-            
-            # 记录详细错误到日志
-            print(f"[错误] ImportModThread.run: 导入MOD失败: {error_msg}")
-            print(f"[错误] 详细错误信息: {trace_info}")
-            
-            # 将详细的错误堆栈写入错误日志文件
-            try:
-                from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                error_log_path = f"logs/import_error_{timestamp}.log"
-                os.makedirs("logs", exist_ok=True)
-                with open(error_log_path, "w", encoding="utf-8") as f:
-                    f.write(f"时间: {datetime.now()}\n")
-                    f.write(f"导入文件: {self.file_path}\n")
-                    f.write(f"错误消息: {error_msg}\n\n")
-                    f.write("详细错误信息:\n")
-                    f.write(trace_info)
-                error_msg += f"\n\n详细错误已记录到: {error_log_path}"
-            except Exception as log_e:
-                print(f"[错误] 写入错误日志失败: {log_e}")
-                
-            # 确保清理所有临时文件
-            try:
-                from utils.mod_manager import cleanup_temp_directories
-                cleanup_temp_directories()
-            except Exception as cleanup_e:
-                print(f"[错误] 清理临时文件失败: {cleanup_e}")
-            
-            self.finished.emit(None, error_msg)
+            self.result = None
+            self.error = str(e)
+        self.finished.emit(self.result, self.error)
 
 class MainWindow(QMainWindow):
     def __init__(self, config_manager):
@@ -636,7 +606,6 @@ class MainWindow(QMainWindow):
         
         # 加载分类和MOD
         self.load_categories()
-        self.load_mods()
         
         # 连接信号
         self.tree.itemClicked.connect(self.on_item_clicked)
@@ -646,8 +615,8 @@ class MainWindow(QMainWindow):
         
         # 首次自动选中第一个分类和第一个MOD
         if self.tree.topLevelItemCount() > 0:
-            self.tree.setCurrentItem(self.tree.topLevelItem(0))
-            self.refresh_mod_list()
+            # 选中默认分类
+            self.select_default_category()
         
         # 当前激活的标签
         self.active_tab = "all"
@@ -666,7 +635,7 @@ class MainWindow(QMainWindow):
         self.mod_count_label.setObjectName('statusLabel')
         status_bar.addPermanentWidget(self.mod_count_label)
         
-        about_label = QLabel("爱酱MOD管理器 v1.6.3 (20250620) | 作者：爱酱 | <a href='https://qm.qq.com/q/bShcpMFj1Y'>QQ群：682707942</a>")
+        about_label = QLabel("爱酱MOD管理器 v1.56 (20250615) | 作者：爱酱 | <a href='https://qm.qq.com/q/bShcpMFj1Y'>QQ群：682707942</a>")
         about_label.setOpenExternalLinks(True)
         self.statusBar().addPermanentWidget(about_label)
         
@@ -787,98 +756,41 @@ class MainWindow(QMainWindow):
         """加载分类到目录树"""
         self.tree.clear()
         
-        # 获取按时间戳排序的分类列表
-        categories = self.config.get_categories()
-        print(f"[调试] load_categories: 加载分类列表: {categories}")
-        
-        # 先加载所有一级分类
-        primary_categories = []
-        sub_categories = {}
-        
-        # 分离一级分类和二级分类
-        for category in categories:
-            if '/' in category:
-                main_cat, sub_cat = category.split('/', 1)
-                if main_cat not in sub_categories:
-                    sub_categories[main_cat] = []
-                sub_categories[main_cat].append(sub_cat)
-                if main_cat not in primary_categories:
-                    primary_categories.append(main_cat)
-            else:
-                if category not in primary_categories:
-                    primary_categories.append(category)
-        
-        # 确保默认分类在列表中
-        default_category_name = self.config.default_category_name
-        if default_category_name not in primary_categories:
-            primary_categories.insert(0, default_category_name)
-        
-        # 按照配置中的顺序添加一级分类（已经按时间戳排序）
-        ordered_primary_categories = []
-        for category in categories:
-            if '/' not in category and category not in ordered_primary_categories:
-                ordered_primary_categories.append(category)
-        
-        # 添加任何可能遗漏的一级分类
-        for category in primary_categories:
-            if category not in ordered_primary_categories:
-                ordered_primary_categories.append(category)
-        
-        # 添加一级分类到树形控件
-        for category in ordered_primary_categories:
-            item = QTreeWidgetItem([category])
-            item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'category', 'name': category})
+        # 获取字典形式的分类
+        categories_dict = self.config.get_categories()
+        print(f"[调试] load_categories: 加载分类字典: {categories_dict}")
+
+        # 按照config中字典的顺序加载，get_categories已经处理了排序和默认分类
+        for category_name, sub_categories in categories_dict.items():
+            item = QTreeWidgetItem([category_name])
+            item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'category', 'name': category_name})
             item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
             self.tree.addTopLevelItem(item)
-            
+
             # 添加该一级分类下的二级分类
-            if category in sub_categories:
-                for sub_cat in sub_categories[category]:
-                    sub_item = QTreeWidgetItem([sub_cat])
-                    full_path = f"{category}/{sub_cat}"
+            if isinstance(sub_categories, list):
+                for sub_cat_name in sub_categories:
+                    sub_item = QTreeWidgetItem([sub_cat_name])
+                    full_path = f"{category_name}/{sub_cat_name}"
                     sub_item.setData(0, Qt.ItemDataRole.UserRole, {
                         'type': 'subcategory', 
-                        'name': sub_cat,
+                        'name': sub_cat_name,
                         'full_path': full_path
                     })
                     sub_item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
                     item.addChild(sub_item)
         
-        print(f"[调试] load_categories: 加载完成，一级分类: {ordered_primary_categories}，二级分类: {sub_categories}")
+        print(f"[调试] load_categories: 加载完成")
         
     def load_mods(self):
-        """加载分类，但不在左侧树中显示MOD"""
-        self.tree.blockSignals(True)
-        
-        # 第一遍：创建所有二级分类
-        sub_categories = {}
-        mods = self.config.get_mods()
-        
-        for mod_id, mod_info in mods.items():
-            category = mod_info.get('category', self.config.default_category_name)
-            # 检查是否包含 / 分隔符，表示二级分类
-            if '/' in category:
-                main_cat, sub_cat = category.split('/', 1)
-                if main_cat not in sub_categories:
-                    sub_categories[main_cat] = set()
-                sub_categories[main_cat].add(sub_cat)
-        
-        # 创建二级分类项
-        for main_cat, sub_cats in sub_categories.items():
-            main_item = self.find_category_item(main_cat)
-            if main_item:
-                for sub_cat in sub_cats:
-                    sub_item = QTreeWidgetItem([sub_cat])
-                    sub_item.setData(0, Qt.ItemDataRole.UserRole, {
-                        'type': 'subcategory', 
-                        'name': sub_cat,
-                        'full_path': f"{main_cat}/{sub_cat}"
-                    })
-                    sub_item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
-                    main_item.addChild(sub_item)
-        
-        self.tree.blockSignals(False)
-        
+        """
+        加载MOD到对应的分类下（在UI上不可见，仅用于数据关联）。
+        此函数目前逻辑可能已合并到 load_categories 和 refresh_mod_list 中，
+        保留此空函数或将其移除，取决于是否还有其他地方调用。
+        当前版本中，MOD的显示由 refresh_mod_list 动态处理，不再预先加载到树中。
+        """
+        pass
+
     def find_category_item(self, category_name):
         """查找分类项"""
         for i in range(self.tree.topLevelItemCount()):
@@ -901,7 +813,7 @@ class MainWindow(QMainWindow):
             rename_action.triggered.connect(lambda: self.rename_category(item))
             menu.addAction(rename_action)
             
-            # 移除对默认分类的特殊处理，所有分类都可以删除
+            # 默认分类不能删除
             if data['name'] != self.config.default_category_name:
                 delete_action = QAction('删除分类', self)
                 delete_action.triggered.connect(lambda: self.delete_category(item))
@@ -947,249 +859,110 @@ class MainWindow(QMainWindow):
         """添加新分类"""
         name, ok = self.input_dialog('添加分类', '请输入分类名称：')
         if ok and name:
-            # 检查分类是否已存在
-            categories = self.config.get_categories()
-            if name in categories:
-                self.show_message('提示', f'分类 "{name}" 已存在！')
-                return
-                
-            # 添加到配置
-            self.config.add_category(name)
-            
-            # 添加到树控件
-            item = QTreeWidgetItem([name])
-            item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'category', 'name': name})
-            item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
-            self.tree.addTopLevelItem(item)
-            
-            # 保存分类顺序
-            self.save_category_order()
-            
-            # 重新加载分类树，确保正确的排序
-            self.load_categories()
-            
-            # 选中新添加的分类
-            self.select_category_by_name(name)
-            
-            # 刷新MOD列表
-            self.refresh_mod_list()
-            
-            print(f"[调试] add_category: 添加分类 {name} 成功")
+            try:
+                self.config.add_category(name)
+                self.load_categories() # 重新加载以反映变化
+                self.select_category_by_name(name)
+                print(f"[调试] add_category: 添加分类 {name} 成功")
+            except ValueError as e:
+                self.show_message('提示', str(e))
     
     def add_subcategory(self, parent_item):
         """添加子分类"""
         parent_name = parent_item.data(0, Qt.ItemDataRole.UserRole)['name']
         name, ok = self.input_dialog('添加子分类', '请输入子分类名称：')
         if ok and name:
-            # 创建完整分类路径
-            full_path = f"{parent_name}/{name}"
-            
-            # 检查分类是否已存在
-            categories = self.config.get_categories()
-            if full_path in categories:
-                self.show_message('提示', f'子分类 "{name}" 已存在！')
-                return
-                
-            # 添加到配置
-            categories.append(full_path)
-            self.config.set_categories(categories)
-            
-            # 添加到树形控件
-            sub_item = QTreeWidgetItem([name])
-            sub_item.setData(0, Qt.ItemDataRole.UserRole, {
-                'type': 'subcategory', 
-                'name': name,
-                'full_path': full_path
-            })
-            sub_item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
-            parent_item.addChild(sub_item)
-            
-            # 展开父分类并选中新添加的子分类
-            self.tree.expandItem(parent_item)
-            self.tree.setCurrentItem(sub_item)
-            
-            # 保存分类顺序
-            self.save_category_order()
-            
-            # 刷新MOD列表
-            self.refresh_mod_list()
+            try:
+                self.config.add_category(parent_name, sub_category=name)
+                self.load_categories() # 重新加载
+                # 重新查找父项并展开
+                new_parent_item = self.find_category_item(parent_name)
+                if new_parent_item:
+                    self.tree.expandItem(new_parent_item)
+                self.select_category_by_name(f"{parent_name}/{name}")
+                print(f"[调试] add_subcategory: 在 {parent_name} 下添加子分类 {name} 成功")
+            except ValueError as e:
+                self.show_message('提示', str(e))
 
     def rename_category(self, item):
         """重命名分类"""
-        old_name = item.data(0, Qt.ItemDataRole.UserRole)['name']
-        print(f"[调试] rename_category: 准备重命名分类 {old_name}")
-        print(f"[调试] rename_category: 当前默认分类名称: {self.config.default_category_name}")
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        old_name = data.get('name')
         
+        if not old_name:
+            return
+
         new_name, ok = self.input_dialog('重命名分类', '请输入新的分类名称：', old_name)
         
         if ok and new_name and new_name != old_name:
-            print(f"[调试] rename_category: 重命名分类 {old_name} -> {new_name}")
-            
-            # 更新config中的分类名称
-            self.config.rename_category(old_name, new_name)
-            
-            # 更新所有MOD的分类信息
-            mods = self.config.get_mods()
-            updated_count = 0
-            for mod_id, mod_info in mods.items():
-                if mod_info.get('category') == old_name:
-                    print(f"[调试] rename_category: 更新MOD {mod_id} 的分类")
-                    mod_info['category'] = new_name
-                    self.config.update_mod(mod_id, mod_info)
-                    updated_count += 1
-                # 同时更新二级分类
-                elif '/' in mod_info.get('category', '') and mod_info.get('category', '').startswith(old_name + '/'):
-                    old_subcat = mod_info.get('category')
-                    new_subcat = old_subcat.replace(old_name + '/', new_name + '/', 1)
-                    print(f"[调试] rename_category: 更新MOD {mod_id} 的子分类 {old_subcat} -> {new_subcat}")
-                    mod_info['category'] = new_subcat
-                    self.config.update_mod(mod_id, mod_info)
-                    updated_count += 1
-            
-            # 更新分类列表中的二级分类路径
-            categories = self.config.get_categories()
-            updated_categories = []
-            for cat in categories:
-                if '/' in cat and cat.startswith(old_name + '/'):
-                    new_cat = cat.replace(old_name + '/', new_name + '/', 1)
-                    updated_categories.append(new_cat)
-                elif cat == old_name:
-                    updated_categories.append(new_name)
-                else:
-                    updated_categories.append(cat)
-            
-            # 确保默认分类始终存在
-            if '默认分类' not in updated_categories:
-                updated_categories.append('默认分类')
-                
-            self.config.set_categories(updated_categories)
-            
-            print(f"[调试] rename_category: 更新了 {updated_count} 个MOD的分类")
-            
-            # 刷新UI
-            self.load_categories()
-            self.load_mods()
-            
-            # 确保选中重命名后的分类
-            found = False
-            for i in range(self.tree.topLevelItemCount()):
-                item = self.tree.topLevelItem(i)
-                if item.data(0, Qt.ItemDataRole.UserRole)['name'] == new_name:
-                    print(f"[调试] rename_category: 选中新分类 {new_name}")
-                    self.tree.setCurrentItem(item)
-                    self.tree.setCurrentItem(item)  # 双重设置确保触发选择事件
-                    found = True
-                    break
-            
-            if not found:
-                # 如果找不到重命名后的分类，选择默认分类
-                self.select_default_category()
-                    
-            # 强制刷新MOD列表
-            self.refresh_mod_list(keep_selected=False)
-            
-            # 确保MOD列表显示
-            self.on_item_clicked(self.tree.currentItem())
-            print("[调试] rename_category: 完成分类重命名")
+            try:
+                self.config.rename_category(old_name, new_name)
+                self.load_categories()
+                self.select_category_by_name(new_name)
+                self.refresh_mod_list()
+                print(f"[调试] rename_category: 完成分类重命名 {old_name} -> {new_name}")
+            except ValueError as e:
+                self.show_message('错误', str(e))
             
     def rename_subcategory(self, item):
         """重命名子分类"""
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        old_name = data['name']
-        full_path = data['full_path']
+        old_name = data.get('name')
+        full_path = data.get('full_path')
+        
+        if not old_name or not full_path:
+            return
+
         parent_name = full_path.split('/', 1)[0]
         
         new_name, ok = self.input_dialog('重命名子分类', '请输入新的子分类名称：', old_name)
         
         if ok and new_name and new_name != old_name:
-            print(f"[调试] rename_subcategory: 重命名子分类 {old_name} -> {new_name}")
-            
-            new_full_path = f"{parent_name}/{new_name}"
-            
-            # 更新所有MOD的分类信息
-            mods = self.config.get_mods()
-            updated_count = 0
-            for mod_id, mod_info in mods.items():
-                if mod_info.get('category') == full_path:
-                    print(f"[调试] rename_subcategory: 更新MOD {mod_id} 的分类")
-                    mod_info['category'] = new_full_path
-                    self.config.update_mod(mod_id, mod_info)
-                    updated_count += 1
-            
-            # 更新分类列表
-            categories = self.config.get_categories()
-            if full_path in categories:
-                idx = categories.index(full_path)
-                categories[idx] = new_full_path
-                self.config.set_categories(categories)
-            
-            print(f"[调试] rename_subcategory: 更新了 {updated_count} 个MOD的分类")
-            
-            # 刷新UI
-            self.load_categories()
-            self.load_mods()
-            
-            # 强制刷新MOD列表
-            self.refresh_mod_list()
-            print("[调试] rename_subcategory: 完成子分类重命名")
-            
+            try:
+                self.config.rename_category(full_path, new_name)
+                self.load_categories()
+                self.select_category_by_name(f"{parent_name}/{new_name}")
+                self.refresh_mod_list()
+                print(f"[调试] rename_subcategory: 完成子分类重命名 {old_name} -> {new_name}")
+            except ValueError as e:
+                self.show_message('错误', str(e))
+
     def delete_category(self, item):
         """删除分类"""
         name = item.data(0, Qt.ItemDataRole.UserRole)['name']
-        default_category_name = self.config.default_category_name
-        if name == default_category_name:
+        if name == self.config.default_category_name:
+            self.show_message('提示', '默认分类无法删除。')
             return
             
-        reply = self.msgbox_question_zh('确认删除', f'确定要删除分类"{name}"吗？\n该分类下的MOD将移至{default_category_name}分类。')
+        reply = self.msgbox_question_zh('确认删除', f'确定要删除分类"{name}"吗？\n该分类下的MOD将移至{self.config.default_category_name}分类。')
         
         if reply == QMessageBox.StandardButton.Yes:
-            # 更新所有MOD的分类信息
-            mods = self.config.get_mods()
-            for mod_id, mod_info in mods.items():
-                if mod_info.get('category') == name:
-                    mod_info['category'] = default_category_name
-                    self.config.update_mod(mod_id, mod_info)
-                # 同时处理二级分类
-                elif '/' in mod_info.get('category', '') and mod_info.get('category', '').startswith(name + '/'):
-                    mod_info['category'] = default_category_name
-                    self.config.update_mod(mod_id, mod_info)
-            
-            # 从分类列表中删除所有相关分类
-            categories = self.config.get_categories()
-            updated_categories = []
-            for cat in categories:
-                if cat != name and not (cat.startswith(name + '/')):
-                    updated_categories.append(cat)
-            
-            self.config.set_categories(updated_categories)
-            self.load_categories()
-            self.load_mods()
-    
+            try:
+                self.config.delete_category(name)
+                self.load_categories()
+                self.select_default_category()
+            except ValueError as e:
+                self.show_message('错误', str(e))
+
     def delete_subcategory(self, item):
         """删除子分类"""
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        full_path = data['full_path']
-        name = data['name']
-        parent_name = full_path.split('/', 1)[0]
+        full_path = data.get('full_path')
+        name = data.get('name')
         
+        if not full_path or not name:
+            return
+            
         reply = self.msgbox_question_zh('确认删除', f'确定要删除子分类"{name}"吗？\n该子分类下的MOD将移至上级分类。')
         
         if reply == QMessageBox.StandardButton.Yes:
-            # 更新所有MOD的分类信息
-            mods = self.config.get_mods()
-            for mod_id, mod_info in mods.items():
-                if mod_info.get('category') == full_path:
-                    mod_info['category'] = parent_name
-                    self.config.update_mod(mod_id, mod_info)
-            
-            # 从分类列表中删除
-            categories = self.config.get_categories()
-            if full_path in categories:
-                categories.remove(full_path)
-                self.config.set_categories(categories)
-            
-            self.load_categories()
-            self.load_mods()
+            try:
+                self.config.delete_category(full_path, move_to_parent=True)
+                self.load_categories()
+                parent_name = full_path.split('/', 1)[0]
+                self.select_category_by_name(parent_name)
+            except ValueError as e:
+                self.show_message('错误', str(e))
 
     def auto_scan_mods(self):
         """自动扫描MOD目录并加载MOD"""
@@ -1235,9 +1008,8 @@ class MainWindow(QMainWindow):
                 print(f"[调试] auto_scan_mods: 导入了 {new_mods_count} 个新MOD")
                 self.statusBar().showMessage(f'已导入 {new_mods_count} 个新MOD', 3000)
             
-            # 加载分类和MOD
+            # 加载分类
             self.load_categories()
-            self.load_mods()
             
         except Exception as e:
             print(f"[错误] auto_scan_mods: 扫描MOD目录失败: {str(e)}")
@@ -1253,59 +1025,25 @@ class MainWindow(QMainWindow):
             '压缩文件 (*.zip *.rar *.7z)'
         )
         if file_path:
-            # 检查文件是否存在
-            if not os.path.exists(file_path):
-                self.show_message(self.tr('导入失败'), self.tr(f'文件不存在: {file_path}'), QMessageBox.Critical)
-                return
-                
-            # 检查文件大小
-            try:
-                file_size = os.path.getsize(file_path)
-                size_mb = file_size / (1024 * 1024)
-                if size_mb > 300:  # 警告超过300MB的文件
-                    reply = self.msgbox_question_zh(
-                        '文件较大', 
-                        f'选择的文件大小为 {size_mb:.2f}MB，较大的文件可能需要更长的处理时间。\n是否继续导入？'
-                    )
-                    if reply != QMessageBox.StandardButton.Yes:
-                        return
-            except Exception as e:
-                print(f"[警告] 检查文件大小失败: {e}")
-            
-            # 显示进度对话框
-            progress_dialog = QProgressDialog("正在导入MOD...", "取消", 0, 0, self)
-            progress_dialog.setWindowTitle("导入MOD")
-            progress_dialog.setWindowModality(Qt.WindowModal)
-            progress_dialog.setMinimumDuration(500)  # 显示对话框前的延迟时间（毫秒）
-            progress_dialog.setAutoClose(False)
-            progress_dialog.setCancelButton(None)  # 禁用取消按钮
-            
-            # 更新状态栏
             self.statusBar().showMessage(self.tr('正在导入MOD...'))
-            
-            # 创建并启动导入线程
             self.import_thread = ImportModThread(self.mod_manager, file_path)
-            self.import_thread.finished.connect(lambda mod_info, error: self.on_import_mod_finished(mod_info, error, progress_dialog))
+            self.import_thread.finished.connect(self.on_import_mod_finished)
             self.import_thread.start()
 
-    def on_import_mod_finished(self, mod_info, error, progress_dialog=None):
+    def on_import_mod_finished(self, mod_info, error):
         """处理MOD导入完成事件"""
-        # 关闭进度对话框
-        if progress_dialog is not None:
-            progress_dialog.close()
-            
         if error:
             self.statusBar().showMessage(self.tr('导入MOD失败'), 3000)
-            self.show_message(self.tr('导入MOD失败'), error, QMessageBox.Critical)
+            self.show_message(self.tr('导入MOD失败'), error)
             return
-                
+            
         if not mod_info:
             self.statusBar().showMessage(self.tr('导入失败，未找到有效MOD文件！'), 3000)
-            self.show_message(self.tr('错误'), self.tr('导入失败，未找到有效MOD文件！'), QMessageBox.Warning)
+            self.show_message(self.tr('错误'), self.tr('导入失败，未找到有效MOD文件！'))
             return
-                
-        imported_mod_ids = []
             
+        imported_mod_ids = []
+        
         # 获取当前选中的分类
         current_category = '默认分类'
         current_item = self.tree.currentItem()
@@ -1316,51 +1054,45 @@ class MainWindow(QMainWindow):
                     current_category = data['name']
                 elif data['type'] == 'subcategory':
                     current_category = data['full_path']
-                        
+                    
         print(f"[调试] on_import_mod_finished: 当前选中的分类: {current_category}")
-            
+        
         # 处理单个MOD或MOD列表
         if isinstance(mod_info, list):
             mod_infos = mod_info
         else:
             mod_infos = [mod_info]
-                
-        # 报告错误计数
-        error_count = 0
-                
+            
         # 导入所有MOD
         for info in mod_infos:
             try:
                 # 获取MOD ID
                 mod_id = info.get('name', str(uuid.uuid4()))
-                    
+                
                 # 设置MOD分类为当前选中的分类
                 info['category'] = current_category
                 print(f"[调试] on_import_mod_finished: 设置MOD {mod_id} 分类为: {current_category}")
-                    
+                
                 # 添加MOD到配置
                 self.config.add_mod(mod_id, info)
-                    
+                
                 # 启用MOD
                 try:
                     enable_result = self.mod_manager.enable_mod(mod_id)
                     if not enable_result:
                         print(f"[警告] on_import_mod_finished: 启用MOD {mod_id} 失败")
-                        error_count += 1
                 except Exception as e:
                     print(f"[错误] on_import_mod_finished: 启用MOD {mod_id} 时出错: {e}")
-                    error_count += 1
-                        
+                    
                 imported_mod_ids.append(mod_id)
             except Exception as e:
                 print(f"[错误] on_import_mod_finished: 处理MOD导入结果时出错: {e}")
                 import traceback
                 traceback.print_exc()
-                error_count += 1
-                    
+                
         # 刷新MOD列表
         self.refresh_mod_list()
-            
+        
         # 如果导入了MOD，选中第一个
         if imported_mod_ids:
             for i in range(self.mod_list.count()):
@@ -1369,25 +1101,17 @@ class MainWindow(QMainWindow):
                     self.mod_list.setCurrentRow(i)
                     self.on_mod_list_clicked(item)
                     break
-                
+            
             # 显示成功消息
             if len(imported_mod_ids) == 1:
-                if error_count > 0:
-                    self.statusBar().showMessage(self.tr('MOD导入成功，但启用过程中有错误。'), 3000)
-                    self.show_message(self.tr('警告'), self.tr('MOD导入成功，但启用过程中有错误。'), QMessageBox.Warning)
-                else:
-                    self.statusBar().showMessage(self.tr('MOD导入并已启用！'), 3000)
-                    self.show_message(self.tr('成功'), self.tr('MOD导入并已启用！'))
+                self.statusBar().showMessage(self.tr('MOD导入并已启用！'), 3000)
+                self.show_message(self.tr('成功'), self.tr('MOD导入并已启用！'))
             else:
-                if error_count > 0:
-                    self.statusBar().showMessage(self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD，但有 {error_count} 个MOD启用失败！'), 3000)
-                    self.show_message(self.tr('警告'), self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD，但有 {error_count} 个MOD启用失败！'), QMessageBox.Warning)
-                else:
-                    self.statusBar().showMessage(self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD！'), 3000)
-                    self.show_message(self.tr('成功'), self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD！'))
+                self.statusBar().showMessage(self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD！'), 3000)
+                self.show_message(self.tr('成功'), self.tr(f'成功导入 {len(imported_mod_ids)} 个MOD！'))
         else:
             self.statusBar().showMessage(self.tr('导入失败，未找到有效MOD文件！'), 3000)
-            self.show_message(self.tr('错误'), self.tr('导入失败，未找到有效MOD文件！'), QMessageBox.Warning)
+            self.show_message(self.tr('错误'), self.tr('导入失败，未找到有效MOD文件！'))
 
     def toggle_mod(self):
         """启用/禁用MOD（以C区选中为准）"""
@@ -1423,17 +1147,7 @@ class MainWindow(QMainWindow):
             self.config.update_mod(mod_id, mod_info)
             print(f"[调试] toggle_mod: 更新config，enabled={mod_info['enabled']}")
             
-            # 保存当前标签页状态
-            current_tab = self.active_tab
-            
-            # 如果当前在"已启用"或"已禁用"标签页，并且MOD状态改变，则可能会导致MOD从列表中消失
-            # 在这种情况下，我们需要切换到"全部"标签页以确保用户能看到MOD
-            if (current_tab == "enabled" and not mod_info['enabled']) or (current_tab == "disabled" and mod_info['enabled']):
-                self.active_tab = "all"
-                self.all_tab.setChecked(True)
-                self.enabled_tab.setChecked(False)
-                self.disabled_tab.setChecked(False)
-            
+            # 刷新UI
             self.refresh_mod_list(search_text=self.search_box.text())
             self.update_status_info()
             
@@ -1716,49 +1430,8 @@ class MainWindow(QMainWindow):
             
         # 检查是否是分类或子分类
         if data['type'] == 'category':
-            name = data['name']
-            if name == '默认分类':
-                QMessageBox.warning(self, self.tr('提示'), self.tr('默认分类无法删除'))
-                return
-                
-            reply = self.msgbox_question_zh(self.tr('确认删除'), self.tr(f'确定要删除分类"{name}"吗？\n该分类下的MOD将移至默认分类。'))
-            if reply == QMessageBox.StandardButton.Yes:
-                print(f"[调试] delete_selected_category: 删除分类: {name}")
-                # 更新所有MOD的分类信息
-                mods = self.config.get_mods()
-                for mod_id, mod_info in mods.items():
-                    if mod_info.get('category') == name:
-                        mod_info['category'] = '默认分类'
-                        self.config.update_mod(mod_id, mod_info)
-                        print(f"[调试] delete_selected_category: 将MOD {mod_id} 从分类 {name} 移至默认分类")
-                    # 同时处理二级分类
-                    elif '/' in mod_info.get('category', '') and mod_info.get('category', '').startswith(name + '/'):
-                        mod_info['category'] = '默认分类'
-                        self.config.update_mod(mod_id, mod_info)
-                        print(f"[调试] delete_selected_category: 将子分类MOD {mod_id} 从分类 {mod_info.get('category')} 移至默认分类")
-                
-                # 从分类列表中删除所有相关分类
-                categories = self.config.get_categories()
-                updated_categories = []
-                for cat in categories:
-                    if cat != name and not (cat.startswith(name + '/')):
-                        updated_categories.append(cat)
-                
-                self.config.set_categories(updated_categories)
-                print(f"[调试] delete_selected_category: 更新分类列表，从 {len(categories)} 个分类减少到 {len(updated_categories)} 个分类")
-                
-                # 重新加载分类和MOD
-                self.load_categories()
-                self.load_mods()
-                
-                # 清空信息面板
-                self.clear_info_panel()
-                
-                # 选中默认分类并刷新MOD列表
-                self.select_default_category()
-                
+            self.delete_category(item)
         elif data['type'] == 'subcategory':
-            # 调用删除子分类的方法
             self.delete_subcategory(item)
         else:
             QMessageBox.warning(self, self.tr('提示'), self.tr('请先选择要删除的分类'))
@@ -2437,10 +2110,10 @@ class MainWindow(QMainWindow):
         # 信息文本
         info_text = f"""
         <div style='text-align:center;'>
-        <b>爱酱剑星MOD管理器</b> v1.6.3 (20250620)<br>
+        <b>爱酱剑星MOD管理器</b> v1.56 (20250615)<br>
         本管理器完全免费<br>
         作者：爱酱<br>
-        QQ群：<a href='https://qm.qq.com/q/Ej0DqPPa9i'>788566495</a> (<a href='https://qm.qq.com/q/2rU31GUAKE'>682707942</a>)<br>
+        QQ群：<a href='https://qm.qq.com/q/bShcpMFj1Y'>682707942</a><br>
         <span style='color:#bdbdbd'>欢迎加入QQ群获取最新MOD和反馈建议！</span>
         </div>
         """
@@ -2469,7 +2142,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(donation_img)
         
         # 添加捐赠文字
-        donation_text = QLabel(self.tr('如果对你有帮助，可以请我喝一杯蜜雪冰城~\n\n捐赠感谢：\n胖虎、YUki\n春告鳥、蘭\n神秘不保底男\n文铭、阪、……、林墨\n爱酱游戏群全体群友'))
+        donation_text = QLabel(self.tr('如果对你有帮助，可以请我喝一杯咖啡~'))
         donation_text.setAlignment(Qt.AlignCenter)
         layout.addWidget(donation_text)
         
@@ -2690,23 +2363,22 @@ class MainWindow(QMainWindow):
         target_name = target_data.get('name', '')
         
         # 保存所有当前分类和MOD的分类关系
-        all_categories = []
+        all_categories = {}
         mod_categories = {}
         
         # 保存所有分类
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
             cat_name = item.text(0)
-            all_categories.append(cat_name)
-            
+            sub_cats = []
             # 收集该一级分类下的所有二级分类
             for j in range(item.childCount()):
                 child = item.child(j)
                 if child.data(0, Qt.ItemDataRole.UserRole)['type'] == 'subcategory':
                     sub_cat_name = child.data(0, Qt.ItemDataRole.UserRole)['name']
-                    full_path = f"{cat_name}/{sub_cat_name}"
-                    all_categories.append(full_path)
-        
+                    sub_cats.append(sub_cat_name)
+            all_categories[cat_name] = sub_cats
+
         # 保存所有MOD的分类关系
         mods = self.config.get_mods()
         for mod_id, mod_info in mods.items():
@@ -2739,70 +2411,11 @@ class MainWindow(QMainWindow):
         # 保存分类顺序，这会触发按时间戳排序
         self.save_category_order()
         
-        # 刷新分类树，确保分类按时间戳排序显示
+        # 在拖拽后，需要更新所有受影响的MOD的分类
+        self.update_mod_categories_from_tree()
+        
+        # 刷新分类树和MOD列表
         self.load_categories()
-        
-        # 如果是将分类拖入其他分类（成为子分类），需要特殊处理
-        if source_type == 'category':
-            # 检查源分类是否还在顶层
-            found_in_top_level = False
-            for i in range(self.tree.topLevelItemCount()):
-                if self.tree.topLevelItem(i).text(0) == source_name:
-                    found_in_top_level = True
-                    break
-            
-            # 如果不在顶层，说明被拖入了其他分类，需要将其转为二级分类
-            if not found_in_top_level:
-                print(f"[调试] on_tree_drop_event: 分类 {source_name} 被拖入其他分类，转为二级分类")
-                
-                # 查找该分类现在的位置
-                for i in range(self.tree.topLevelItemCount()):
-                    parent_item = self.tree.topLevelItem(i)
-                    parent_name = parent_item.text(0)
-                    
-                    # 检查是否是默认分类，不允许子分类下有默认分类
-                    if source_name == '默认分类':
-                        # 将默认分类还原为顶级分类
-                        for j in range(parent_item.childCount()):
-                            child = parent_item.child(j)
-                            if child.text(0) == '默认分类':
-                                parent_item.removeChild(child)
-                                
-                        default_item = QTreeWidgetItem(['默认分类'])
-                        default_item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'category', 'name': '默认分类'})
-                        default_item.setIcon(0, QIcon(resource_path('icons/文件夹.svg')))
-                        self.tree.insertTopLevelItem(0, default_item)
-                        print("[调试] on_tree_drop_event: 将默认分类恢复为顶级分类")
-                        continue
-                        
-                    for j in range(parent_item.childCount()):
-                        child = parent_item.child(j)
-                        if child.text(0) == source_name and child.data(0, Qt.ItemDataRole.UserRole)['type'] == 'category':
-                            # 找到了被拖入的分类，将其转为二级分类
-                            full_path = f"{parent_name}/{source_name}"
-                            
-                            # 更新数据
-                            child.setData(0, Qt.ItemDataRole.UserRole, {
-                                'type': 'subcategory',
-                                'name': source_name,
-                                'full_path': full_path
-                            })
-                            
-                            # 更新该分类下所有MOD的分类信息
-                            updated_count = 0
-                            for mod_id, category in mod_categories.items():
-                                if category == source_name:
-                                    mod_info = mods.get(mod_id)
-                                    if mod_info:
-                                        mod_info['category'] = full_path
-                                        self.config.update_mod(mod_id, mod_info)
-                                        updated_count += 1
-                                        print(f"[调试] on_tree_drop_event: 更新MOD {mod_id} 的分类为 {full_path}")
-                            
-                            print(f"[调试] on_tree_drop_event: 已更新 {updated_count} 个MOD的分类信息")
-                            break
-        
-        # 刷新MOD列表
         self.refresh_mod_list()
     
     def select_category_by_name(self, category_name):
@@ -2996,128 +2609,47 @@ class MainWindow(QMainWindow):
 
     def save_category_order(self):
         """保存当前目录树结构到配置"""
-        # 获取所有一级分类和二级分类
-        categories = []
-        all_categories = []
-        
-        # 收集所有一级分类
+        categories_dict = {}
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
             cat_name = item.text(0)
-            categories.append(cat_name)
-            all_categories.append(cat_name)
             
-            # 收集该一级分类下的所有二级分类
+            sub_categories = []
             for j in range(item.childCount()):
                 child = item.child(j)
                 child_data = child.data(0, Qt.ItemDataRole.UserRole)
                 if child_data and child_data.get('type') == 'subcategory':
                     sub_cat_name = child_data.get('name')
-                    full_path = child_data.get('full_path')
-                    if not full_path:  # 如果没有完整路径，则构造一个
-                        full_path = f"{cat_name}/{sub_cat_name}"
-                    all_categories.append(full_path)
-        
-        # 确保默认分类始终存在
-        if '默认分类' not in all_categories:
-            all_categories.insert(0, '默认分类')
-            
-        # 获取现有配置中的分类，保持原有的时间戳顺序
-        existing_categories = self.config.get_categories()
-        
-        # 创建一个合并后的分类列表，保持时间戳顺序
-        merged_categories = []
-        
-        # 先添加现有配置中的分类（保持顺序）
-        for cat in existing_categories:
-            if cat in all_categories:
-                merged_categories.append(cat)
-                
-        # 再添加新的分类
-        for cat in all_categories:
-            if cat not in merged_categories:
-                merged_categories.append(cat)
-        
-        # 确保默认分类在最前面
-        if '默认分类' in merged_categories:
-            merged_categories.remove('默认分类')
-            merged_categories.insert(0, '默认分类')
-        
-        # 保存完整分类列表到配置文件
-        print(f"[调试] save_category_order: 保存分类列表: {merged_categories}")
-        self.config.set_categories(merged_categories)
-        
-        # 将当前分类列表保存到临时文件，确保刷新时能恢复
-        temp_config_file = Path(self.config.config_dir) / "temp_categories.json"
-        try:
-            with open(temp_config_file, 'w', encoding='utf-8') as f:
-                import json
-                json.dump(merged_categories, f, ensure_ascii=False)
-            print(f"[调试] save_category_order: 已保存临时分类列表到 {temp_config_file}")
-        except Exception as e:
-            print(f"[调试] save_category_order: 保存临时分类列表失败: {e}")
-        
-        # 更新所有MOD的分类信息，确保它们的分类路径正确
-        self.update_mod_categories()
+                    sub_categories.append(sub_cat_name)
 
-    def update_mod_categories(self):
-        """更新所有MOD的分类信息，确保它们的分类路径正确"""
-        # 收集所有有效的分类路径
-        valid_categories = set()
+            categories_dict[cat_name] = sub_categories
+
+        print(f"[调试] save_category_order: 保存分类字典: {categories_dict}")
+        self.config.set_categories(categories_dict)
+        
+    def update_mod_categories_from_tree(self):
+        """根据当前树结构更新所有MOD的分类信息"""
+        mods = self.config.get_mods()
+        
         for i in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(i)
-            cat_name = item.text(0)
-            valid_categories.add(cat_name)
+            parent_item = self.tree.topLevelItem(i)
+            parent_name = parent_item.text(0)
             
-            # 添加二级分类
-            for j in range(item.childCount()):
-                child = item.child(j)
-                if child.data(0, Qt.ItemDataRole.UserRole)['type'] == 'subcategory':
-                    sub_cat_name = child.data(0, Qt.ItemDataRole.UserRole)['name']
-                    full_path = f"{cat_name}/{sub_cat_name}"
-                    valid_categories.add(full_path)
-        
-        # 确保默认分类始终存在
-        valid_categories.add('默认分类')
-        print(f"[调试] update_mod_categories: 有效分类列表: {valid_categories}")
-        
-        # 更新配置中的分类列表
-        self.config.set_categories(list(valid_categories))
-        
-        # 委托给ConfigManager处理MOD分类更新
-        if hasattr(self.config, 'update_mod_categories'):
-            updated_count = self.config.update_mod_categories(valid_categories)
-            print(f"[调试] update_mod_categories: 配置管理器更新了 {updated_count} 个MOD的分类信息")
-        else:
-            # 如果ConfigManager没有实现该方法，保留原来的逻辑
-            mods = self.config.get_mods()
-            updated_count = 0
-            for mod_id, mod_info in mods.items():
-                current_category = mod_info.get('category', '默认分类')
-                if current_category not in valid_categories:
-                    # 如果分类不存在，检查父级分类是否存在
-                    parent_category = None
-                    if '/' in current_category:
-                        parent_name = current_category.split('/', 1)[0]
-                        if parent_name in valid_categories:
-                            parent_category = parent_name
-                    
-                    # 如果父级分类存在，将MOD移至父级分类；否则移至默认分类
-                    old_category = current_category
-                    if parent_category:
-                        mod_info['category'] = parent_category
-                        print(f"[调试] update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为父级分类 {parent_category}")
-                    else:
-                        mod_info['category'] = '默认分类'
-                        print(f"[调试] update_mod_categories: MOD {mod_id} 的分类从 {old_category} 更新为默认分类")
-                    
-                    self.config.update_mod(mod_id, mod_info)
-                    updated_count += 1
-            
-            if updated_count > 0:
-                print(f"[调试] update_mod_categories: 已更新 {updated_count} 个MOD的分类信息")
-        
-        return updated_count
+            for j in range(parent_item.childCount()):
+                child_item = parent_item.child(j)
+                child_data = child_item.data(0, Qt.ItemDataRole.UserRole)
+                
+                if not child_data: continue
+                
+                target_category = ""
+                if child_data.get('type') == 'subcategory':
+                    target_category = child_data.get('full_path', f"{parent_name}/{child_data.get('name')}")
+                
+                # 遍历子分类下的所有MOD
+                # 注意：此版本MOD不直接挂在树上，此逻辑需要调整
+                # 拖拽逻辑应直接处理MOD分类变更，而不是依赖此函数
+
+        print("[调试] update_mod_categories_from_tree: 此函数功能待定")
 
     def show_help(self):
         # 创建帮助对话框
@@ -3560,33 +3092,29 @@ class MainWindow(QMainWindow):
         
         # 添加所有可用分类
         categories = self.config.get_categories()
-        root_categories = []  # 一级分类
-        sub_categories = {}   # 二级分类 {父分类: [子分类]}
         
-        for cat in categories:
-            if '/' in cat:
-                parent, sub = cat.split('/', 1)
-                if parent not in sub_categories:
-                    sub_categories[parent] = []
-                sub_categories[parent].append(cat)
+        # 按照字典顺序添加
+        for cat, subs in categories.items():
+            if not subs:
+                # 没有子分类的一级分类
+                cat_action = QAction(cat, self)
+                cat_action.triggered.connect(lambda checked=False, c=cat: self.move_selected_mods_to_category(c))
+                move_menu.addAction(cat_action)
             else:
-                root_categories.append(cat)
-        
-        # 添加一级分类
-        for cat in root_categories:
-            cat_action = QAction(cat, self)
-            cat_action.triggered.connect(lambda checked=False, c=cat: self.move_selected_mods_to_category(c))
-            move_menu.addAction(cat_action)
-            
-            # 如果有子分类，添加子菜单
-            if cat in sub_categories:
-                sub_menu = QMenu(cat, self)
-                for sub_cat in sub_categories[cat]:
-                    sub_action = QAction(sub_cat.split('/', 1)[1], self)
-                    sub_action.triggered.connect(lambda checked=False, c=sub_cat: self.move_selected_mods_to_category(c))
+                # 有子分类的一级分类
+                sub_menu = move_menu.addMenu(cat)
+                # 添加一个选项，可以直接移动到父分类
+                parent_action = QAction(f"(移动到 {cat})", self)
+                parent_action.triggered.connect(lambda checked=False, c=cat: self.move_selected_mods_to_category(c))
+                sub_menu.addAction(parent_action)
+                sub_menu.addSeparator()
+
+                for sub_cat_name in subs:
+                    full_path = f"{cat}/{sub_cat_name}"
+                    sub_action = QAction(sub_cat_name, self)
+                    sub_action.triggered.connect(lambda checked=False, c=full_path: self.move_selected_mods_to_category(c))
                     sub_menu.addAction(sub_action)
-                move_menu.addMenu(sub_menu)
-        
+
         context_menu.addMenu(move_menu)
         
         # 添加删除选项

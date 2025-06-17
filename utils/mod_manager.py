@@ -668,22 +668,23 @@ class ModManager:
     VERSION = "1.63"  # 版本号
     
     def __init__(self, config_manager):
-        self.config = config_manager
-        self.game_path = Path(config_manager.get_game_path())
+        """初始化MOD管理器"""
+        self.config_manager = config_manager
+        
+        # 获取MOD路径
+        self.mods_path = self.config_manager.get_mods_path()
+        mod_logger.info(f"ModManager初始化: 获取到MOD路径 {self.mods_path}")
         
         # 添加更多的错误处理和日志记录
         try:
-            mods_path = config_manager.get_mods_path()
-            mod_logger.info(f"ModManager初始化: 获取到MOD路径 {mods_path}")
-            
-            if not mods_path:
+            if not self.mods_path:
                 mod_logger.warning("ModManager初始化: MOD路径为空")
                 # 如果MOD路径为空，尝试使用默认路径
                 default_mods_path = Path.cwd() / "mods"
                 mod_logger.info(f"ModManager初始化: 使用默认MOD路径 {default_mods_path}")
                 self.mods_path = default_mods_path
             else:
-                self.mods_path = Path(mods_path)
+                self.mods_path = Path(self.mods_path)
                 
             mod_logger.info(f"ModManager初始化: 最终MOD路径 {self.mods_path}")
         except Exception as e:
@@ -731,7 +732,7 @@ class ModManager:
                 return found_mods
                 
             # 获取现有MOD信息，用于保留用户自定义名称
-            existing_mods = self.config.get_mods()
+            existing_mods = self.config_manager.get_mods()
             # 创建文件路径到MOD ID的映射，用于识别重命名的MOD
             path_to_mod_id = {}
             for mod_id, mod_info in existing_mods.items():
@@ -1116,7 +1117,7 @@ class ModManager:
         try:
             mod_logger.info(f"import_mod: 开始导入MOD文件 {file_path}")
             original_zip = Path(file_path)
-            mods_path = Path(self.config.get_mods_path())
+            mods_path = Path(self.config_manager.get_mods_path())
             
             # 创建临时工作目录用于解压
             temp_work_dir = create_temp_directory(self.temp_base_path)
@@ -1172,7 +1173,7 @@ class ModManager:
                             }
                             
                             # 备份MOD文件
-                            self.config.backup_mod(mod_info['name'], mod_info)
+                            self.config_manager.backup_mod(mod_info['name'], mod_info)
                             
                             # 添加到导入列表
                             imported_mods.append(mod_info)
@@ -1192,11 +1193,11 @@ class ModManager:
                                 # 如果返回了多个MOD信息
                                 for mod_info in nested_result:
                                     # 备份MOD文件
-                                    self.config.backup_mod(mod_info['name'], mod_info)
+                                    self.config_manager.backup_mod(mod_info['name'], mod_info)
                                     imported_mods.append(mod_info)
                             else:
                                 # 如果只返回了一个MOD信息
-                                self.config.backup_mod(nested_result['name'], nested_result)
+                                self.config_manager.backup_mod(nested_result['name'], nested_result)
                                 imported_mods.append(nested_result)
                 
                 # 如果没有找到任何MOD文件，创建一个虚拟MOD
@@ -1228,7 +1229,7 @@ class ModManager:
                         }
                         
                         # 备份MOD文件
-                        self.config.backup_mod(mod_info['name'], mod_info)
+                        self.config_manager.backup_mod(mod_info['name'], mod_info)
                         
                         # 返回结果
                         imported_mods = [mod_info]
@@ -1257,14 +1258,14 @@ class ModManager:
             mod_logger.info(f"enable_mod: 开始启用MOD {mod_id}")
             
             # 获取MOD信息
-            mods = self.config.get_mods()
+            mods = self.config_manager.get_mods()
             mod_info = mods.get(mod_id)
             if not mod_info:
                 mod_logger.error(f"enable_mod: 找不到MOD信息: {mod_id}")
                 return False
                 
             # 获取备份路径
-            backup_path = Path(self.config.get_backup_path())
+            backup_path = Path(self.config_manager.get_backup_path())
             if not str(backup_path).strip():
                 backup_path = Path(os.getcwd()) / "modbackup"
                 
@@ -1322,7 +1323,7 @@ class ModManager:
                         return False
             
             # 获取MOD目录路径
-            mods_path = Path(self.config.get_mods_path())
+            mods_path = Path(self.config_manager.get_mods_path())
             if not mods_path.exists():
                 mods_path.mkdir(parents=True, exist_ok=True)
                 
@@ -1375,7 +1376,7 @@ class ModManager:
                 
             # 更新MOD状态
             mod_info['enabled'] = True
-            self.config.update_mod(mod_id, mod_info)
+            self.config_manager.update_mod(mod_id, mod_info)
             
             mod_logger.info(f"enable_mod: MOD {mod_id} 已启用，复制了 {copied_count} 个文件")
             return True
@@ -1389,7 +1390,7 @@ class ModManager:
     def disable_mod(self, mod_id):
         """禁用MOD"""
         try:
-            mod_info = self.config.get_mods().get(mod_id)
+            mod_info = self.config_manager.get_mods().get(mod_id)
             if not mod_info:
                 raise ValueError(f"MOD不存在: {mod_id}")
                 
@@ -1414,7 +1415,7 @@ class ModManager:
                             mod_logger.info(f"disable_mod: 删除空目录 {parent_dir}")
             
             mod_info['enabled'] = False
-            self.config.update_mod(mod_id, mod_info)
+            self.config_manager.update_mod(mod_id, mod_info)
             return True
         except Exception as e:
             mod_logger.error(f"disable_mod: 禁用失败 {str(e)}")
@@ -1426,16 +1427,27 @@ class ModManager:
         self.disable_mod(mod_id)
         
         # 删除备份
-        backup_dir = Path(self.config.get_backup_path()) / mod_id
+        backup_dir = Path(self.config_manager.get_backup_path()) / mod_id
         if backup_dir.exists():
             shutil.rmtree(backup_dir)
         
         # 从配置中删除
-        self.config.remove_mod(mod_id)
+        self.config_manager.remove_mod(mod_id)
         
+    def delete_mods(self, mod_ids):
+        """批量删除MOD"""
+        deleted_ids = []
+        for mod_id in mod_ids:
+            try:
+                if self.delete_mod(mod_id):
+                    deleted_ids.append(mod_id)
+            except Exception as e:
+                mod_logger.error(f"批量删除期间，删除MOD {mod_id} 失败: {e}")
+        return deleted_ids
+
     def update_mod_info(self, mod_id, mod_info):
         """更新MOD信息"""
-        self.config.update_mod(mod_id, mod_info)
+        self.config_manager.update_mod(mod_id, mod_info)
         
     def set_preview_image(self, mod_id, image_path):
         """设置MOD的预览图"""
@@ -1443,14 +1455,14 @@ class ModManager:
             mod_logger.info(f"set_preview_image: 为MOD {mod_id} 设置预览图: {image_path}")
             
             # 获取MOD信息
-            mods = self.config.get_mods()
+            mods = self.config_manager.get_mods()
             mod_info = mods.get(mod_id)
             if not mod_info:
                 mod_logger.error(f"set_preview_image: 找不到MOD信息: {mod_id}")
                 return False
                 
             # 获取备份路径
-            backup_path = self.config.get_backup_path()
+            backup_path = self.config_manager.get_backup_path()
             if not backup_path:
                 backup_path = os.path.join(os.getcwd(), "modbackup")
             mod_logger.info(f"set_preview_image: 使用备份路径: {backup_path}")
@@ -1473,10 +1485,10 @@ class ModManager:
             
             # 更新MOD信息
             mod_info['preview_image'] = str(preview_path)
-            self.config.update_mod(mod_id, mod_info)
+            self.config_manager.update_mod(mod_id, mod_info)
             
             # 验证预览图路径是否正确保存
-            updated_mods = self.config.get_mods()
+            updated_mods = self.config_manager.get_mods()
             updated_mod_info = updated_mods.get(mod_id)
             if updated_mod_info:
                 saved_preview_path = updated_mod_info.get('preview_image', '')
@@ -1484,7 +1496,7 @@ class ModManager:
                     mod_logger.warning(f"set_preview_image: 预览图路径未正确保存，期望: {preview_path}，实际: {saved_preview_path}")
                     # 再次尝试更新
                     updated_mod_info['preview_image'] = str(preview_path)
-                    self.config.update_mod(mod_id, updated_mod_info)
+                    self.config_manager.update_mod(mod_id, updated_mod_info)
                 else:
                     mod_logger.info(f"set_preview_image: 预览图路径已正确保存: {saved_preview_path}")
             
@@ -1502,21 +1514,21 @@ class ModManager:
             
             # 如果没有提供mod_info，从配置获取
             if not mod_info:
-                mods = self.config.get_mods()
+                mods = self.config_manager.get_mods()
                 mod_info = mods.get(mod_id)
                 if not mod_info:
                     mod_logger.error(f"ModManager.backup_mod: 找不到MOD信息: {mod_id}")
                     return False
             
             # 确保备份路径已设置
-            backup_path = self.config.get_backup_path()
+            backup_path = self.config_manager.get_backup_path()
             if not backup_path or not str(backup_path).strip():
                 default_backup_path = os.path.join(os.getcwd(), "modbackup")
                 mod_logger.info(f"ModManager.backup_mod: 设置默认备份路径: {default_backup_path}")
-                self.config.set_backup_path(default_backup_path)
+                self.config_manager.set_backup_path(default_backup_path)
             
             # 调用ConfigManager的backup_mod方法进行备份
-            result = self.config.backup_mod(mod_id, mod_info)
+            result = self.config_manager.backup_mod(mod_id, mod_info)
             mod_logger.info(f"ModManager.backup_mod: 备份结果: {result}")
             return result
             
@@ -1530,7 +1542,7 @@ class ModManager:
         """从备份目录恢复MOD文件到游戏目录"""
         try:
             mod_logger.info(f"restore_mod_from_backup: 开始从 {backup_path} 恢复MOD {mod_id}")
-            mods = self.config.get_mods()
+            mods = self.config_manager.get_mods()
             if mod_id not in mods:
                 mod_logger.error(f"restore_mod_from_backup: 找不到MOD {mod_id}")
                 return False
@@ -1559,12 +1571,12 @@ class ModManager:
                 # 更新MOD文件列表
                 mod_logger.info(f"restore_mod_from_backup: 从备份推断的文件列表: {mod_files}")
                 mod['files'] = mod_files
-                self.config._save_config()
+                self.config_manager._save_config()
             
             # 将所有备份文件复制到游戏目录
             success_count = 0
             error_count = 0
-            mods_path = Path(self.config.get_mods_path())
+            mods_path = Path(self.config_manager.get_mods_path())
             
             for mod_file in mod_files:
                 # 生成目标文件路径
@@ -1619,5 +1631,58 @@ class ModManager:
             return False
 
     def get_game_exe_name(self):
-        """获取游戏可执行文件名称"""
-        return "SB-Win64-Shipping.exe"
+        return self.config_manager.get_game_exe_name()
+
+    def enable_mods(self, mod_ids):
+        """批量启用MOD，并返回操作结果"""
+        results = {}
+        for mod_id in mod_ids:
+            results[mod_id] = self.enable_mod(mod_id)
+        return results
+
+    def disable_mods(self, mod_ids):
+        """批量禁用MOD，并返回操作结果"""
+        results = {}
+        for mod_id in mod_ids:
+            results[mod_id] = self.disable_mod(mod_id)
+        return results
+
+    def update_mod_categories(self, category_name):
+        """更新MOD分类"""
+        self.config_manager.update_mod_categories(
+            lambda cat: self.config_manager.default_category_name if cat == category_name else cat
+        )
+
+    def get_mods_by_category(self, category_name):
+        """获取指定分类下的所有MOD"""
+        all_mods = self.config_manager.get_mods()
+        if not category_name:
+            return []
+        
+        mods_in_category = {}
+        for mod_id, mod_info in all_mods.items():
+            mod_category = mod_info.get("category", self.config_manager.default_category_name)
+            # 支持主分类和子分类的匹配
+            if mod_category == category_name or mod_category.startswith(f"{category_name}/"):
+                mods_in_category[mod_id] = mod_info
+        return mods_in_category
+
+    def get_enabled_mods_by_category(self, category_name):
+        """获取指定分类下已启用的MOD"""
+        mods_in_category = self.get_mods_by_category(category_name)
+        return {
+            mod_id: mod_info for mod_id, mod_info in mods_in_category.items()
+            if mod_info.get("enabled")
+        }
+
+    def get_disabled_mods_by_category(self, category_name):
+        """获取指定分类下已禁用的MOD"""
+        mods_in_category = self.get_mods_by_category(category_name)
+        return {
+            mod_id: mod_info for mod_id, mod_info in mods_in_category.items()
+            if not mod_info.get("enabled")
+        }
+
+    def update_mod_info(self, mod_id, mod_info):
+        """更新MOD信息"""
+        self.config_manager.update_mod(mod_id, mod_info)
