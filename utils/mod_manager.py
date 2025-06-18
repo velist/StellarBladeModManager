@@ -668,56 +668,64 @@ class ModManager:
     VERSION = "1.63"  # 版本号
     
     def __init__(self, config_manager):
-        """初始化MOD管理器"""
+        """初始化"""
         self.config_manager = config_manager
-        
-        # 获取MOD路径
-        self.mods_path = self.config_manager.get_mods_path()
-        mod_logger.info(f"ModManager初始化: 获取到MOD路径 {self.mods_path}")
-        
-        # 添加更多的错误处理和日志记录
-        try:
-            if not self.mods_path:
-                mod_logger.warning("ModManager初始化: MOD路径为空")
-                # 如果MOD路径为空，尝试使用默认路径
-                default_mods_path = Path.cwd() / "mods"
-                mod_logger.info(f"ModManager初始化: 使用默认MOD路径 {default_mods_path}")
-                self.mods_path = default_mods_path
-            else:
-                self.mods_path = Path(self.mods_path)
-                
-            mod_logger.info(f"ModManager初始化: 最终MOD路径 {self.mods_path}")
-        except Exception as e:
-            mod_logger.error(f"ModManager初始化: 设置MOD路径时出错: {str(e)}")
-            # 如果出错，使用当前目录下的mods作为备选
-            self.mods_path = Path.cwd() / "mods"
-            mod_logger.info(f"ModManager初始化: 使用备选MOD路径 {self.mods_path}")
+        mods_path_str = self.config_manager.get_mods_path()
+
+        if mods_path_str:
+            # --- 路径健康检查和修正 ---
+            original_path = Path(mods_path_str)
+            mod_logger.info(f"ModManager初始化: 原始MOD路径 {original_path}")
             
-        # 使用专用的临时文件夹，避免使用系统默认的临时目录
-        self.temp_base_path = Path.cwd() / "mod_temp"
-        
-        # 确保必要的目录存在
-        try:
+            # 规范化路径分隔符
+            normalized_path_str = str(original_path).replace('/', os.sep).replace('\\', os.sep)
+            
+            # 检查并修正重复的"~mods"段
+            parts = normalized_path_str.split(os.sep)
+            if parts.count('~mods') > 1:
+                mod_logger.warning(f"检测到重复的 '~mods' 路径: {normalized_path_str}")
+                first_index = parts.index('~mods')
+                corrected_parts = parts[:first_index + 1]
+                corrected_path_str = os.sep.join(corrected_parts)
+                
+                self.mods_path = Path(corrected_path_str)
+                mod_logger.info(f"已自动修正路径为: {self.mods_path}")
+                
+                # 将修正后的路径保存回配置
+                self.config_manager.set_mods_path(str(self.mods_path))
+                mod_logger.info("已将修正后的路径保存回配置文件。")
+            else:
+                self.mods_path = Path(normalized_path_str)
+
+            mod_logger.info(f"ModManager初始化: 最终MOD路径 {self.mods_path}")
+            
+            # 确保MOD目录存在
             mod_logger.info(f"ModManager初始化: 确保MOD路径存在 {self.mods_path}")
             self.mods_path.mkdir(parents=True, exist_ok=True)
             mod_logger.info(f"ModManager初始化: MOD路径创建成功或已存在")
-        except Exception as e:
-            mod_logger.error(f"ModManager初始化: 创建MOD目录失败: {str(e)}")
-            
-        try:
-            mod_logger.info(f"ModManager初始化: 确保临时基础路径存在 {self.temp_base_path}")
-            self.temp_base_path.mkdir(parents=True, exist_ok=True)
-            mod_logger.info(f"ModManager初始化: 临时基础路径创建成功或已存在")
-        except Exception as e:
-            mod_logger.error(f"ModManager初始化: 创建临时基础路径失败: {str(e)}")
-            # 如果无法创建自定义临时目录，使用备选路径
-            self.temp_base_path = Path.cwd() / "temp"
-            try:
-                self.temp_base_path.mkdir(parents=True, exist_ok=True)
-                mod_logger.info(f"ModManager初始化: 使用备选临时路径 {self.temp_base_path}")
-            except Exception as e2:
-                mod_logger.error(f"ModManager初始化: 创建备选临时目录也失败: {str(e2)}")
-                # 不再尝试
+        else:
+            self.mods_path = None
+            mod_logger.warning("ModManager初始化: MOD路径未设置。")
+
+        # 确保MOD备份目录存在
+        backup_path_str = self.config_manager.get_backup_path()
+        if not backup_path_str:
+            # 如果备份路径未设置，则使用默认路径
+            default_backup_path = Path(os.getcwd()) / "modbackup"
+            self.config_manager.set_backup_path(str(default_backup_path))
+            backup_path_str = str(default_backup_path)
+            mod_logger.info(f"ModManager初始化: 备份路径未设置，使用默认路径 {backup_path_str}")
+
+        self.backup_path = Path(backup_path_str)
+        mod_logger.info(f"ModManager初始化: 确保备份路径存在 {self.backup_path}")
+        self.backup_path.mkdir(parents=True, exist_ok=True)
+        mod_logger.info(f"ModManager初始化: 备份路径创建成功或已存在")
+
+        # 确保临时目录存在
+        self.temp_base_path = Path(os.getcwd()) / "mod_temp"
+        mod_logger.info(f"ModManager初始化: 确保临时基础路径存在 {self.temp_base_path}")
+        self.temp_base_path.mkdir(exist_ok=True)
+        mod_logger.info(f"ModManager初始化: 临时基础路径创建成功或已存在")
 
     def scan_mods_directory(self):
         """递归扫描MOD目录及子目录，支持子文件夹下同名pak/ucas/utoc"""
@@ -1388,37 +1396,52 @@ class ModManager:
             return False
 
     def disable_mod(self, mod_id):
-        """禁用MOD"""
+        """禁用MOD，只删除此MOD对应的文件或文件夹"""
         try:
             mod_info = self.config_manager.get_mods().get(mod_id)
             if not mod_info:
-                raise ValueError(f"MOD不存在: {mod_id}")
-                
-            # 删除MOD文件
+                mod_logger.warning(f"disable_mod: 找不到MOD信息: {mod_id}, 可能已被删除。")
+                return False
+
             mods_path = self.mods_path
-            for file in mod_info.get('files', []):
-                file_path = mods_path / file if not file.endswith('.zip') else None
-                if file_path and file_path.exists():
-                    file_path.unlink()
-                    mod_logger.info(f"disable_mod: 删除文件 {file_path}")
-                    
-            # 清理空文件夹
-            if mod_info.get('folder_structure', False):
-                # 获取第一个文件的父目录
-                first_file = mod_info.get('files', [''])[0]
-                if first_file:
-                    parent_dir = (mods_path / first_file).parent
-                    if parent_dir.exists() and parent_dir != mods_path:
-                        # 检查目录是否为空
-                        if not any(parent_dir.iterdir()):
-                            parent_dir.rmdir()
-                            mod_logger.info(f"disable_mod: 删除空目录 {parent_dir}")
+            if not mods_path or not mods_path.exists():
+                mod_logger.error(f"disable_mod: MODs路径无效或不存在: {mods_path}")
+                return False
+
+            # 从mod_info中获取此MOD安装时使用的文件夹名称
+            folder_name = mod_info.get('folder_name')
+            if not folder_name:
+                mod_logger.error(f"disable_mod: MOD {mod_id} 信息不完整, 缺少 'folder_name'，无法禁用。")
+                return False
             
+            mod_dir_to_delete = mods_path / folder_name
+            
+            if mod_dir_to_delete.exists() and mod_dir_to_delete.is_dir():
+                try:
+                    shutil.rmtree(mod_dir_to_delete)
+                    mod_logger.info(f"disable_mod: 成功删除MOD文件夹 {mod_dir_to_delete}")
+                except Exception as e:
+                    mod_logger.error(f"disable_mod: 删除MOD文件夹 {mod_dir_to_delete} 失败: {e}")
+                    return False
+            elif mod_dir_to_delete.exists():
+                # 如果它是一个文件而不是文件夹
+                mod_logger.warning(f"disable_mod: 目标路径 {mod_dir_to_delete} 是一个文件而不是预期的文件夹，将直接删除该文件。")
+                try:
+                    mod_dir_to_delete.unlink()
+                except Exception as e:
+                    mod_logger.error(f"disable_mod: 删除MOD文件 {mod_dir_to_delete} 失败: {e}")
+                    return False
+            else:
+                mod_logger.warning(f"disable_mod: MOD文件夹 {mod_dir_to_delete} 不存在，可能已被手动删除。")
+
             mod_info['enabled'] = False
             self.config_manager.update_mod(mod_id, mod_info)
             return True
+            
         except Exception as e:
-            mod_logger.error(f"disable_mod: 禁用失败 {str(e)}")
+            mod_logger.error(f"disable_mod: 禁用MOD {mod_id} 失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
             
     def delete_mod(self, mod_id):
@@ -1686,3 +1709,19 @@ class ModManager:
     def update_mod_info(self, mod_id, mod_info):
         """更新MOD信息"""
         self.config_manager.update_mod(mod_id, mod_info)
+
+    def rename_mod(self, old_id, new_id):
+        """
+        重命名MOD，包括其在~mods目录下的文件夹和备份文件夹。
+        :param old_id: 旧的MOD ID
+        :param new_id: 新的MOD ID
+        :return: 成功返回True，失败返回False
+        """
+        # 此功能已废弃，以避免文件系统问题。重命名现在只修改显示名称。
+        print("[警告] rename_mod (in mod_manager.py) is deprecated.")
+        return False
+            
+    def update_mod_categories(self, update_func_or_valid_list):
+        """
+        根据提供的函数或列表更新所有MOD的分类。
+        """

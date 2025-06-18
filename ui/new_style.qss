@@ -1,0 +1,162 @@
+/*
+ * Catppuccin Mocha Theme for PySide6
+ * Author: Ai-chan
+ * Version: 1.0
+ */
+
+* {
+    color: #cdd6f4; /* Text */
+    font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    font-size: 10pt;
+    border: none;
+}
+
+QMainWindow {
+    background-color: #1e1e2e; /* Base */
+}
+
+/* Frames and Containers */
+QFrame#topArea {
+    background-color: #181825; /* Crust */
+    border-bottom: 1px solid #313244; /* Surface0 */
+}
+
+QFrame#leftFrame, QFrame#rightFrame {
+    background-color: #1e1e2e; /* Base */
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #313244; /* Surface0 */
+    color: #cdd6f4; /* Text */
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+QPushButton:hover {
+    background-color: #45475a; /* Surface1 */
+}
+
+QPushButton:pressed {
+    background-color: #585b70; /* Surface2 */
+}
+
+QPushButton#launchGameBtn {
+    background-color: #89b4fa; /* Blue */
+    color: #1e1e2e; /* Base */
+    font-weight: bold;
+    font-size: 11pt;
+}
+QPushButton#launchGameBtn:hover {
+    background-color: #93bcfb;
+}
+
+/* Category Tree */
+QTreeWidget {
+    background-color: #1e1e2e; /* Base */
+    padding: 5px;
+}
+QTreeWidget::item {
+    padding: 8px;
+    border-radius: 6px;
+}
+QTreeWidget::item:selected {
+    background-color: #313244; /* Surface0 */
+}
+QTreeWidget::item:hover {
+    background-color: #45475a; /* Surface1 */
+}
+
+/* MOD List */
+QListWidget {
+    background-color: #181825; /* Crust */
+    border-radius: 8px;
+    padding: 4px;
+}
+
+/* Custom list item widget styling */
+QWidget#modItemWidget {
+    background-color: #313244; /* Surface0 */
+    border-radius: 6px;
+    margin: 2px 0;
+}
+
+QWidget#modItemWidget:hover {
+    background-color: #45475a; /* Surface1 */
+}
+
+QLabel#modNameLabel {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #cdd6f4; /* Text */
+}
+
+QLabel#statusLabel_enabled {
+    color: #a6e3a1; /* Green */
+    font-weight: bold;
+    background-color: rgba(166, 227, 161, 0.1);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+QLabel#statusLabel_disabled {
+    color: #f38ba8; /* Red */
+    font-weight: bold;
+    background-color: rgba(243, 139, 168, 0.1);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+
+/* Search Box */
+QLineEdit {
+    background-color: #313244; /* Surface0 */
+    border: 1px solid #45475a; /* Surface1 */
+    border-radius: 8px;
+    padding: 8px;
+    color: #cdd6f4;
+}
+QLineEdit:focus {
+    border-color: #89b4fa; /* Blue */
+}
+
+/* Splitter */
+QSplitter::handle {
+    background-color: #313244; /* Surface0 */
+}
+QSplitter::handle:horizontal {
+    width: 1px;
+}
+QSplitter::handle:vertical {
+    height: 1px;
+}
+
+/* Scroll Bars */
+QScrollBar:vertical, QScrollBar:horizontal {
+    border-radius: 6px;
+    background: #1e1e2e; /* Base */
+    width: 12px;
+    height: 12px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #585b70; /* Surface2 */
+    border-radius: 6px;
+    min-height: 20px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
+    background: #6c7086; /* Overlay0 */
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+    height: 0px;
+    width: 0px;
+    background: none;
+}
+
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: none;
+} 

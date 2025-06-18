@@ -190,24 +190,42 @@ QListWidget#modList {
     border: none;
     border-radius: 10px;
     padding: 5px;
+    font-size: 13px;
     outline: none;
-    font-size: 14px;
 }
 
 QListWidget#modList::item {
-    color: #fff;
     padding: 8px 12px;
-    border-radius: 8px;
-    margin-bottom: 4px;
+    border-radius: 4px;
+    margin: 1px 0;
 }
 
 QListWidget#modList::item:hover {
-    background-color: #3b3566;
+    background-color: rgba(177, 140, 255, 0.2);
 }
 
 QListWidget#modList::item:selected {
-    background-color: #6c63ff;
-    color: #fff;
+    background-color: rgba(177, 140, 255, 0.4);
+}
+
+QLabel#modListNameLabel {
+    color: #f5e0dc;
+    font-size: 13px;
+    background: transparent;
+}
+
+QLabel#statusLabel_enabled {
+    color: #a6e3a1; /* 亮绿色 */
+    font-weight: bold;
+    font-size: 12px;
+    background: transparent;
+}
+
+QLabel#statusLabel_disabled {
+    color: #f38ba8; /* 亮红色 */
+    font-weight: bold;
+    font-size: 12px;
+    background: transparent;
 }
 
 /* 按钮样式 */
@@ -467,26 +485,12 @@ QLabel#previewLabel {
 
 /* 字段标签样式 - 垂直排列 */
 QFrame#modFieldsFrame QLabel {
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    margin-bottom: 6px;
-}
-
-QListWidget#modList {
-    background: #23243a;
-    border-radius: 12px;
-    font-size: 14px;
-    color: #fff;
-}
-QListWidget#modList::item {
-    padding: 8px 8px;
-    border-radius: 8px;
-    margin-bottom: 3px;
-}
-QListWidget#modList::item:selected {
-    background: #6c63ff;
-    color: #fff;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 4px;
+    background-color: #313244;  /* 稍微亮一点的背景 */
+    color: #cdd6f4;  /* 默认浅色文字 */
 }
 
 QStatusBar QLabel {

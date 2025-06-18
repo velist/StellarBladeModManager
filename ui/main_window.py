@@ -5,10 +5,10 @@ from PySide6.QtWidgets import (
     QFrame, QSplitter, QDialog, QLineEdit, QTextEdit,
     QDialogButtonBox, QFormLayout, QToolBar, QToolButton,
     QStatusBar, QProgressBar, QListWidget, QListWidgetItem,
-    QScrollArea, QAbstractItemView, QCheckBox
+    QScrollArea, QAbstractItemView, QCheckBox, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QSize, Signal, QThread, QMimeData, QPoint, QByteArray
-from PySide6.QtGui import QAction, QIcon, QPixmap, QFont, QImage, QDrag, QPainter
+from PySide6.QtGui import QAction, QIcon, QPixmap, QFont, QImage, QDrag, QPainter, QColor
 from utils.mod_manager import ModManager
 from utils.config_manager import ConfigManager
 import os
@@ -24,6 +24,27 @@ def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
+
+class ModListItemWidget(QWidget):
+    """用于MOD列表的自定义控件，显示MOD名称和状态"""
+    def __init__(self, mod_name, is_enabled, parent=None):
+        super().__init__(parent)
+        self.setObjectName("modListItemWidget")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
+
+        name_label = QLabel(mod_name)
+        name_label.setObjectName("modListNameLabel")
+
+        status_label = QLabel("已启用" if is_enabled else "已禁用")
+        status_label.setObjectName(f"statusLabel_{'enabled' if is_enabled else 'disabled'}")
+
+        layout.addWidget(name_label)
+        layout.addStretch()
+        layout.addWidget(status_label)
+        self.setLayout(layout)
 
 class ModInfoDialog(QDialog):
     def __init__(self, parent=None, mod_info=None):
@@ -126,11 +147,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config_manager
         self.mod_manager = ModManager(config_manager)
-        self.load_style()
-        self.init_ui()
         
-        # 更新启动游戏按钮状态
-        self.update_launch_button()
+        # 初始化当前激活的标签
+        self.active_tab = "all"
+        
+        # 加载样式表
+        self.load_style()
         
         # 检查是否需要设置备份目录
         if not self.config.get_backup_path():
@@ -140,17 +162,20 @@ class MainWindow(QMainWindow):
         if not self.config.get_mods_path():
             self.set_mods_directory()
             
+        # 自动扫描并加载MOD
+        self.auto_scan_mods()
+        
+        # 初始化UI
+        self.init_ui()
+        
+        # 更新启动游戏按钮状态
+        self.update_launch_button()
+        
         # 检查是否需要设置游戏路径
         if not self.config.get_game_path():
             reply = self.msgbox_question_zh('设置游戏路径', '是否设置游戏路径以便直接启动游戏？\n游戏可执行文件名为SB-Win64-Shipping.exe')
             if reply == QMessageBox.StandardButton.Yes:
                 self.set_game_path()
-        
-        # 初始化当前激活的标签
-        self.active_tab = "all"
-        
-        # 自动扫描并加载MOD
-        self.auto_scan_mods()
         
     def load_style(self):
         """加载样式表"""
@@ -178,9 +203,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        
-        # 当前激活的标签
-        self.active_tab = "all"
         
         # 加载样式表
         self.load_style()
@@ -402,16 +424,16 @@ class MainWindow(QMainWindow):
         right_frame.setObjectName("rightFrame")
         right_frame.setStyleSheet("QFrame#rightFrame { background-color: #23243a; border-radius: 0px; }")
         right_layout = QVBoxLayout(right_frame)
-        right_layout.setContentsMargins(20, 20, 20, 20)
-        right_layout.setSpacing(15)
+        right_layout.setContentsMargins(20, 12, 20, 20)  # 减小顶部边距
+        right_layout.setSpacing(10)  # 减小各区域间距
         
         # MOD信息卡片 (C1区)
         info_frame = QFrame()
         info_frame.setObjectName('infoFrame')
-        info_frame.setStyleSheet("QFrame#infoFrame { background-color: #292a3e; border-radius: 20px; padding: 10px; }")
+        info_frame.setStyleSheet("QFrame#infoFrame { background-color: #292a3e; border-radius: 15px; padding: 5px; }")
         info_layout = QHBoxLayout(info_frame)  # 改为水平布局
-        info_layout.setContentsMargins(10, 10, 10, 10)  # 减小内边距
-        info_layout.setSpacing(10)  # 减小间距
+        info_layout.setContentsMargins(8, 6, 8, 6)  # 进一步减小内边距
+        info_layout.setSpacing(8)  # 减小间距
         
         # 左侧预览图
         preview_layout = QVBoxLayout()
@@ -420,8 +442,8 @@ class MainWindow(QMainWindow):
         self.preview_label = QLabel("请导入预览图\n(推荐使用1:1或16:9的图片)")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px; color: #bdbdbd; font-size: 12px;')
-        self.preview_label.setMinimumSize(220, 160)  # 减小最小尺寸
-        self.preview_label.setMaximumWidth(250)  # 减小最大宽度
+        self.preview_label.setMinimumSize(180, 130)  # 进一步减小最小尺寸
+        self.preview_label.setMaximumWidth(200)  # 进一步减小最大宽度
         
         # 使预览标签可以接收鼠标事件
         self.preview_label.setMouseTracking(True)
@@ -436,15 +458,15 @@ class MainWindow(QMainWindow):
         self.mod_name_label = QLabel()
         self.mod_name_label.setObjectName('modNameLabel')
         self.mod_name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.mod_name_label.setStyleSheet('font-size:18px;font-weight:bold;color:#cba6f7;padding:2px 0;')  # 减小字号和内边距
+        self.mod_name_label.setStyleSheet('font-size:16px;font-weight:bold;color:#cba6f7;padding:0px 0;')  # 进一步减小字号和内边距
         info_right_layout.addWidget(self.mod_name_label)
         
         # 竖排字段信息
         self.mod_fields_frame = QFrame()
         self.mod_fields_frame.setObjectName('modFieldsFrame')
         self.mod_fields_layout = QVBoxLayout(self.mod_fields_frame)  # 改为垂直布局
-        self.mod_fields_layout.setContentsMargins(0, 4, 0, 4)  # 减小内边距
-        self.mod_fields_layout.setSpacing(6)  # 减小间距
+        self.mod_fields_layout.setContentsMargins(0, 2, 0, 2)  # 进一步减小内边距
+        self.mod_fields_layout.setSpacing(4)  # 减小字段间距
         self.mod_fields_layout.setAlignment(Qt.AlignTop)
         info_right_layout.addWidget(self.mod_fields_frame)
         
@@ -462,7 +484,9 @@ class MainWindow(QMainWindow):
         info_layout.addLayout(preview_layout, 1)
         info_layout.addLayout(info_right_layout, 1)
         
-        right_layout.addWidget(info_frame, 1)  # 减小C1区权重
+        # 减小C1区权重，让它更紧凑
+        info_frame.setMaximumHeight(220)  # 限制最大高度
+        right_layout.addWidget(info_frame, 1)  # 权重保持为1
         
         # MOD列表 (C2区)
         mod_list_frame = QFrame()
@@ -476,12 +500,11 @@ class MainWindow(QMainWindow):
         tab_layout.setSpacing(5)  # 减小间距
         tab_layout.setContentsMargins(0, 0, 0, 0)  # 减小内边距
         
-        # 添加编辑模式按钮
-        self.edit_mode_cb = QCheckBox("编辑模式")
-        self.edit_mode_cb.setObjectName("editModeCheckBox")
-        self.edit_mode_cb.setStyleSheet("font-size: 12px; color: #b18cff;")
-        self.edit_mode_cb.stateChanged.connect(self.toggle_edit_mode)
-        self.edit_mode_cb.setVisible(True)  # 显示编辑模式复选框
+        # 添加全选复选框
+        self.select_all_cb = QCheckBox("全选")
+        self.select_all_cb.setObjectName("selectAllCheckBox")
+        self.select_all_cb.setStyleSheet("font-size: 12px; color: #b18cff;")
+        self.select_all_cb.stateChanged.connect(self.on_select_all_changed)
         
         # 标签按钮
         self.all_tab = QPushButton(self.tr("全部"))
@@ -504,7 +527,7 @@ class MainWindow(QMainWindow):
             btn.setMinimumWidth(90)  # 减小宽度
             btn.setStyleSheet("font-size: 12px;")  # 减小字号
         
-        tab_layout.addWidget(self.edit_mode_cb)  # 添加编辑模式复选框
+        tab_layout.addWidget(self.select_all_cb)  # 添加全选复选框
         tab_layout.addWidget(self.all_tab)
         tab_layout.addWidget(self.enabled_tab)
         tab_layout.addWidget(self.disabled_tab)
@@ -520,6 +543,7 @@ class MainWindow(QMainWindow):
         self.mod_list.setDragDropMode(QAbstractItemView.DragOnly)  # 只允许从列表中拖出
         self.mod_list.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 允许多选
         self.mod_list.itemClicked.connect(self.on_mod_list_clicked)
+        self.mod_list.itemChanged.connect(self.on_mod_item_changed) # 连接itemChanged信号
         self.mod_list.setStyleSheet("QListWidget { background-color: #23243a; border: none; border-radius: 10px; padding: 5px; font-size: 13px; }")  # 减小字号
         
         # 设置自定义MIME类型，确保拖拽数据能被正确识别
@@ -533,7 +557,7 @@ class MainWindow(QMainWindow):
         self.mod_list.startDrag = self.mod_list_start_drag
         
         mod_list_layout.addWidget(self.mod_list)
-        right_layout.addWidget(mod_list_frame, 3)  # 增加C2区权重，从2增加到3
+        right_layout.addWidget(mod_list_frame, 5)  # 进一步增加C2区权重，从3增加到5
         
         # 操作按钮面板 (C3区)
         button_frame = QFrame()
@@ -604,23 +628,16 @@ class MainWindow(QMainWindow):
         # 创建状态栏
         self.create_status_bar()
         
-        # 加载分类和MOD
-        self.load_categories()
-        
         # 连接信号
         self.tree.itemClicked.connect(self.on_item_clicked)
+        self.mod_list.itemClicked.connect(self.on_mod_list_clicked)
         
-        # 在所有控件都创建好后再自动扫描
-        self.auto_scan_mods()
+        # 首先加载分类
+        self.load_categories()
         
-        # 首次自动选中第一个分类和第一个MOD
-        if self.tree.topLevelItemCount() > 0:
-            # 选中默认分类
-            self.select_default_category()
-        
-        # 当前激活的标签
-        self.active_tab = "all"
-        
+        # 然后选中默认分类并加载MOD
+        self.select_default_category()
+
     def create_status_bar(self):
         """创建状态栏"""
         status_bar = QStatusBar()
@@ -1098,7 +1115,7 @@ class MainWindow(QMainWindow):
             for i in range(self.mod_list.count()):
                 item = self.mod_list.item(i)
                 if item.data(Qt.UserRole) == imported_mod_ids[0]:
-                    self.mod_list.setCurrentRow(i)
+                    self.mod_list.setCurrentItem(item)
                     self.on_mod_list_clicked(item)
                     break
             
@@ -1114,241 +1131,140 @@ class MainWindow(QMainWindow):
             self.show_message(self.tr('错误'), self.tr('导入失败，未找到有效MOD文件！'))
 
     def toggle_mod(self):
-        """启用/禁用MOD（以C区选中为准）"""
-        item = self.mod_list.currentItem()
-        if not item:
+        """
+        启用/禁用MOD。
+        优先处理复选框勾选的MOD，如果没有，则处理当前高亮选中的MOD。
+        """
+        selected_items = self.get_selected_mod_items() # 优先获取复选框选中的项
+        if not selected_items:
             print("[调试] toggle_mod: C区未选中任何项")
+            self.show_message("提示", "请先选择要操作的MOD。")
             return
-        mod_id = item.data(Qt.UserRole)
-        mods = self.config.get_mods()
-        mod_info = mods.get(mod_id)
-        if not mod_info:
-            print("[调试] toggle_mod: 未找到mod_info")
+
+        is_bulk_operation = len(selected_items) > 1
+        
+        # 决定是启用还是禁用。在批量操作时，以第一个MOD的状态为准。
+        first_mod_id = selected_items[0].data(Qt.UserRole)
+        first_mod_info = self.config.get_mod(first_mod_id)
+        if not first_mod_info:
+            print(f"[错误] toggle_mod: 找不到第一个MOD的信息: {first_mod_id}")
             return
-        print(f"[调试] toggle_mod: mod_id={mod_id}, enabled={mod_info.get('enabled', False)}")
+            
+        enable_action = not first_mod_info.get('enabled', False)
+        action_text = "启用" if enable_action else "禁用"
+        
+        print(f"[调试] toggle_mod: 准备批量 {action_text} {len(selected_items)} 个MOD")
+
+        processed_count = 0
         try:
-            self.statusBar().showMessage('正在处理...')
-            if mod_info.get('enabled', False):
-                print(f"[调试] 禁用MOD，调用disable_mod，目标文件：{mod_info.get('files', [])}")
-                result = self.mod_manager.disable_mod(mod_id)
-                print(f"[调试] disable_mod结果: {result}")
-                mod_info['enabled'] = False
-                self.enable_btn.setText('启用MOD')
-                self.enable_btn.setIcon(QIcon(resource_path('icons/开启-开启.svg')))
-                self.statusBar().showMessage('MOD已禁用', 3000)
-            else:
-                print(f"[调试] 启用MOD，调用enable_mod，目标文件：{mod_info.get('files', [])}")
-                result = self.mod_manager.enable_mod(mod_id)
-                print(f"[调试] enable_mod结果: {result}")
-                mod_info['enabled'] = True
-                self.enable_btn.setText('禁用MOD')
-                self.enable_btn.setIcon(QIcon(resource_path('icons/禁用.svg')))
-                self.statusBar().showMessage('MOD已启用', 3000)
-            self.config.update_mod(mod_id, mod_info)
-            print(f"[调试] toggle_mod: 更新config，enabled={mod_info['enabled']}")
+            self.statusBar().showMessage(f'正在批量{action_text}...')
+            for item in selected_items:
+                mod_id = item.data(Qt.UserRole)
+                mod_info = self.config.get_mod(mod_id)
+                if not mod_info:
+                    print(f"[警告] toggle_mod: 找不到MOD {mod_id} 的信息，跳过")
+                    continue
+                
+                # 只有当MOD的当前状态与目标操作相反时才执行
+                if mod_info.get('enabled', False) != enable_action:
+                    if enable_action:
+                        self.mod_manager.enable_mod(mod_id)
+                    else:
+                        self.mod_manager.disable_mod(mod_id)
+                    processed_count += 1
             
-            # 刷新UI
-            self.refresh_mod_list(search_text=self.search_box.text())
-            self.update_status_info()
-            
-            # 更新信息面板
-            self.show_mod_info(mod_info)
+            self.statusBar().showMessage(f"成功{action_text} {processed_count} 个MOD", 3000)
             
         except Exception as e:
-            print(f"[调试] toggle_mod: 操作失败: {e}")
+            print(f"[错误] toggle_mod: 批量操作失败: {e}")
             self.statusBar().showMessage('操作失败！', 3000)
             self.show_message(self.tr('错误'), f'操作失败：{str(e)}')
+        finally:
+            # 刷新UI
+            self.refresh_mod_list(search_text=self.search_box.text(), keep_selected=True)
+            self.update_status_info()
 
     def on_item_clicked(self, item):
-        """处理树形控件项目点击事件"""
+        # QTreeWidgetItem使用data(0, Qt.ItemDataRole.UserRole)
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        if data['type'] == 'category' or data['type'] == 'subcategory':
-            self.refresh_mod_list()
-            # 自动选中第一个MOD并展示信息卡片
-            if self.mod_list.count() > 0:
-                self.mod_list.setCurrentRow(0)
-                self.on_mod_list_clicked(self.mod_list.item(0))
-            else:
-                self.clear_info_panel()
-        else:
-            self.clear_info_panel()
-            
-    def clear_info_panel(self):
-        """清空右侧信息面板"""
-        # 清空MOD信息
-        self.mod_name_label.setText("")
         
+        # 只有当点击的是MOD项时才调用show_mod_info
+        if isinstance(data, dict) and data.get('type') == 'mod':
+            self.show_mod_info(data.get('mod_id'))
+
+    def clear_info_panel(self):
+        """清空右侧MOD信息面板"""
+        # 清空MOD名称标签
+        self.mod_name_label.clear()
         # 清空预览图
         self.preview_label.clear()
-        self.preview_label.setText("无预览图")
-        self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px; color: #bdbdbd; font-size: 12px;')
-        
-        # 清除字段信息
-        for i in reversed(range(self.mod_fields_layout.count())):
-            widget = self.mod_fields_layout.itemAt(i)
-            if widget:
-                if widget.widget():
-                    widget.widget().setParent(None)
-                elif widget.layout():
-                    # 如果是布局，需要递归清除其中的所有控件
-                    layout = widget.layout()
-                    for j in reversed(range(layout.count())):
-                        if layout.itemAt(j).widget():
-                            layout.itemAt(j).widget().setParent(None)
-        
-        # 显示提示信息
-        self.mod_fields_frame.hide()
-        self.info_label.show()
+        self.preview_label.setText(self.tr("无预览图"))
         
         # 禁用操作按钮
-        self.enable_btn.setEnabled(False)
-        self.delete_btn.setEnabled(False)
         self.rename_mod_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
         self.change_preview_btn.setEnabled(False)
+        self.enable_btn.setEnabled(False)
+
+    def show_mod_info(self, mod_id):
+        print(f"[调试] show_mod_info: 显示MOD信息: {mod_id}")
+        mod_info = self.config.get_mod(mod_id)
+
+        if not mod_info:
+            print(f"[警告] show_mod_info: 找不到MOD信息: {mod_id}")
+            self.clear_info_panel()
+            return
+
+        # 使用 display_name，如果不存在则回退到 mod_id
+        display_name = mod_info.get('display_name', mod_id)
         
-    def show_mod_info(self, mod_info):
-        """显示MOD信息（名称上方，字段竖排）"""
-        print(f"[调试] show_mod_info: 显示MOD信息: {mod_info.get('name', '未知')}")
+        # 显示MOD名称
+        self.mod_name_label.setText(display_name)
         
-        real_name = mod_info.get('real_name', '')
-        name = mod_info.get('name', '未命名MOD')
-        if real_name and real_name != name:
-            show_name = f"{name}（{real_name}）"
-        else:
-            show_name = name
-        self.mod_name_label.setText(show_name)
-        self.mod_name_label.show()
+        # 清空现有信息
+        for i in reversed(range(self.mod_fields_layout.count())): 
+            if self.mod_fields_layout.itemAt(i).widget():
+                self.mod_fields_layout.itemAt(i).widget().deleteLater()
         
-        # 显示预览图
-        preview_image = mod_info.get('preview_image', '')
-        print(f"[调试] show_mod_info: 预览图路径: {preview_image}")
-        
-        # 检查预览图路径是否存在
-        if preview_image:
-            # 如果预览图路径不存在，尝试在备份目录中查找
-            if not os.path.exists(preview_image):
-                print(f"[警告] show_mod_info: 预览图不存在: {preview_image}，尝试查找替代路径")
-                
-                # 获取备份路径
-                backup_path = self.config.get_backup_path()
-                if not backup_path:
-                    backup_path = os.path.join(os.getcwd(), "modbackup")
-                backup_path = Path(backup_path)
-                
-                # 检查MOD备份目录
-                mod_id = mod_info.get('name', '')
-                mod_backup_dir = backup_path / mod_id
-                
-                # 查找预览图文件
-                if mod_backup_dir.exists():
-                    preview_files = list(mod_backup_dir.glob("preview.*"))
-                    if preview_files:
-                        preview_image = str(preview_files[0])
-                        print(f"[调试] show_mod_info: 找到替代预览图: {preview_image}")
-                        # 更新MOD信息中的预览图路径
-                        mod_info['preview_image'] = preview_image
-                        self.config.update_mod(mod_id, mod_info)
-                    else:
-                        print(f"[警告] show_mod_info: 未找到替代预览图")
-                else:
-                    print(f"[警告] show_mod_info: MOD备份目录不存在: {mod_backup_dir}")
-        
-        if preview_image and os.path.exists(preview_image):
-            try:
-                print(f"[调试] show_mod_info: 尝试加载预览图: {preview_image}")
-                pixmap = QPixmap(preview_image)
-                if not pixmap.isNull():
-                    self.preview_label.setPixmap(pixmap.scaled(
-                        250, 180, Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    ))
-                    # 清除文本和样式
-                    self.preview_label.setText("")
-                    self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px;')
-                    print(f"[调试] show_mod_info: 成功加载预览图: {preview_image}")
-                else:
-                    # 如果无法加载预览图，显示提示文字
-                    self.preview_label.clear()
-                    self.preview_label.setText("无法加载预览图")
-                    self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px; color: #bdbdbd; font-size: 12px;')
-                    print(f"[警告] show_mod_info: 无法加载预览图: {preview_image}")
-            except Exception as e:
-                self.preview_label.clear()
-                self.preview_label.setText("加载预览图失败")
-                self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px; color: #bdbdbd; font-size: 12px;')
-                print(f"[错误] show_mod_info: 加载预览图失败: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            # 如果没有预览图，显示默认提示
-            self.preview_label.clear()
-            self.preview_label.setText("无预览图")
-            self.preview_label.setStyleSheet('border: 1px solid #313244; border-radius: 4px; color: #bdbdbd; font-size: 12px;')
-            if preview_image:
-                print(f"[警告] show_mod_info: 预览图路径存在但文件不存在: {preview_image}")
-            else:
-                print(f"[调试] show_mod_info: 没有设置预览图路径")
-        
-        # 确保鼠标指针始终为手型
-        self.preview_label.setCursor(Qt.PointingHandCursor)
-        
-        # 清除之前的字段信息
-        for i in reversed(range(self.mod_fields_layout.count())):
-            widget = self.mod_fields_layout.itemAt(i)
-            if widget:
-                if widget.widget():
-                    widget.widget().setParent(None)
-                elif widget.layout():
-                    # 如果是布局，需要递归清除其中的所有控件
-                    layout = widget.layout()
-                    for j in reversed(range(layout.count())):
-                        if layout.itemAt(j).widget():
-                            layout.itemAt(j).widget().setParent(None)
-        
-        # 显示MOD信息
-        self.mod_fields_frame.show()
-        self.info_label.hide()
-        
-        # 添加MOD信息字段
-        fields = [
-            ('状态', '已启用' if mod_info.get('enabled', False) else '已禁用', 'color: #4ade80;' if mod_info.get('enabled', False) else 'color: #f87171;'),
-            ('大小', f"{mod_info.get('size', '--')} MB", 'color: #e2e8f0;'),
-            ('导入日期', mod_info.get('import_date', '--'), 'color: #e2e8f0;'),
-            ('描述', mod_info.get('description', '无描述'), 'color: #e2e8f0;')
+        # MOD信息 - 精简字段，去除重复和不必要的信息
+        info_data = [
+            ('状态', '已启用' if mod_info.get('enabled', False) else '已禁用', 
+             'color: #4ade80;' if mod_info.get('enabled', False) else 'color: #f87171;'),
+            ('原始名称', mod_info.get('name', mod_info.get('real_name', '未知')), 'color: #cdd6f4;'),  # 添加原始名称字段
+            ('导入日期', mod_info.get('import_date', '未知'), 'color: #cdd6f4;')  # 浅色文字
         ]
-        
-        for label_text, value_text, style in fields:
-            field_layout = QHBoxLayout()
-            field_layout.setContentsMargins(0, 0, 0, 0)
-            field_layout.setSpacing(5)
-            
-            label = QLabel(f"{label_text}:")
-            label.setStyleSheet('font-weight: bold; color: #cba6f7;')
-            field_layout.addWidget(label)
-            
-            value = QLabel(value_text)
-            if style:
-                value.setStyleSheet(style)
-            field_layout.addWidget(value, 1)
-            
-            self.mod_fields_layout.addLayout(field_layout)
-        
-        # 保存当前显示的MOD ID
-        self.current_mod_id = mod_info.get('name', '')
+
+        # 添加MOD信息到布局
+        for name, value, style in info_data:
+            info_label = QLabel(f"{name}: {value}")
+            info_label.setStyleSheet(style)  # 始终应用样式
+            self.mod_fields_layout.addWidget(info_label)
+
+        # 显示预览图
+        preview_path = mod_info.get('preview_image', '')
+        print(f"[调试] show_mod_info: 预览图路径: {preview_path}")
+        if preview_path and Path(preview_path).exists():
+            pixmap = QPixmap(preview_path)
+            if not pixmap.isNull():
+                self.preview_label.setPixmap(pixmap.scaled(
+                    self.preview_label.width(), 
+                    self.preview_label.height(), 
+                    Qt.KeepAspectRatio, 
+                    Qt.SmoothTransformation
+                ))
+            else:
+                self.preview_label.setText(self.tr("无法加载预览图"))
+        else:
+            print(f"[调试] show_mod_info: 没有设置预览图路径")
+            self.preview_label.clear()
+            self.preview_label.setText(self.tr("无预览图"))
         
         # 启用操作按钮
-        self.enable_btn.setEnabled(True)
-        self.delete_btn.setEnabled(True)
         self.rename_mod_btn.setEnabled(True)
+        self.delete_btn.setEnabled(True)
         self.change_preview_btn.setEnabled(True)
-        
-        # 设置启用/禁用按钮的文本和图标
-        if mod_info.get('enabled', False):
-            self.enable_btn.setText('禁用MOD')
-            self.enable_btn.setIcon(QIcon(resource_path('icons/禁用.svg')))
-        else:
-            self.enable_btn.setText('启用MOD')
-            self.enable_btn.setIcon(QIcon(resource_path('icons/开启-开启.svg')))
+        self.enable_btn.setEnabled(True)
+        self.enable_btn.setText("禁用MOD" if mod_info.get('enabled', False) else "启用MOD")
         
         print(f"[调试] show_mod_info: 显示完成，已启用操作按钮")
 
@@ -1438,17 +1354,45 @@ class MainWindow(QMainWindow):
             
     def select_default_category(self):
         """选中默认分类"""
+        print("[调试] select_default_category: 开始选择默认分类")
+        
+        # 如果树中没有项，无法选择分类
+        if self.tree.topLevelItemCount() == 0:
+            print("[调试] select_default_category: 树中没有项，无法选择分类")
+            return False
+            
         # 获取默认分类名称
         default_category_name = self.config.default_category_name
         
         # 查找默认分类
+        default_item = None
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
             data = item.data(0, Qt.ItemDataRole.UserRole)
             if data['type'] == 'category' and data['name'] == default_category_name:
-                self.tree.setCurrentItem(item)
-                self.refresh_mod_list()
-                return True
+                default_item = item
+                break
+        
+        # 如果找不到默认分类，则使用第一个分类
+        if not default_item and self.tree.topLevelItemCount() > 0:
+            default_item = self.tree.topLevelItem(0)
+            print(f"[调试] select_default_category: 未找到默认分类，使用第一个分类: {default_item.text(0)}")
+        
+        # 选中分类并刷新MOD列表
+        if default_item:
+            self.tree.setCurrentItem(default_item)
+            print(f"[调试] select_default_category: 已选中分类: {default_item.text(0)}")
+            self.refresh_mod_list()
+            
+            # 选中第一个MOD（如果有的话）
+            if self.mod_list.count() > 0:
+                self.mod_list.setCurrentRow(0)
+                self.on_mod_list_clicked(self.mod_list.item(0))
+                print("[调试] select_default_category: 已选中第一个MOD")
+            
+            return True
+        
+        print("[调试] select_default_category: 无法选择分类")
         return False
 
     def toggle_language(self):
@@ -1752,12 +1696,20 @@ class MainWindow(QMainWindow):
         # 获取当前分类信息
         current_item = self.tree.currentItem()
         if not current_item:
-            print("[调试] refresh_mod_list: 没有选中的分类")
-            return
+            print("[调试] refresh_mod_list: 没有选中的分类，尝试选择默认分类")
+            # 自动选择默认分类
+            if not self.select_default_category():
+                print("[调试] refresh_mod_list: 无法选择默认分类，返回")
+                return
+            # 获取新选中的分类
+            current_item = self.tree.currentItem()
+            if not current_item:
+                print("[调试] refresh_mod_list: 选择默认分类后仍然没有选中项，返回")
+                return
             
         data = current_item.data(0, Qt.ItemDataRole.UserRole)
         if not data:
-            print("[调试] refresh_mod_list: 选中项没有关联数据")
+            print("[调试] refresh_mod_list: 选中项没有关联数据，返回")
             return
             
         cat_type = data.get('type', '')
@@ -1812,9 +1764,6 @@ class MainWindow(QMainWindow):
         # 创建一个集合来跟踪已添加的MOD ID，防止重复添加
         added_mod_ids = set()
         
-        # 检查是否处于编辑模式
-        is_edit_mode = self.edit_mode_cb.isChecked()
-        
         # 添加符合条件的MOD到列表
         for mod_id, mod_info in mods.items():
             # 跳过已添加的MOD
@@ -1828,9 +1777,9 @@ class MainWindow(QMainWindow):
                 
             # 检查启用状态
             is_enabled = mod_info.get('enabled', False)
-            if current_tab == 'enabled_tab' and not is_enabled:
+            if self.active_tab == 'enabled' and not is_enabled:
                 continue
-            if current_tab == 'disabled_tab' and is_enabled:
+            if self.active_tab == 'disabled' and is_enabled:
                 continue
                 
             # 检查搜索文本
@@ -1848,29 +1797,27 @@ class MainWindow(QMainWindow):
                     search_text.lower() not in name.lower()):
                     continue
             
-            # 添加到列表
-            item = QListWidgetItem()
-            # 使用name作为显示名称（备注名称），如果没有则使用display_name或mod_name或mod_id
-            display_name = mod_info.get('name', mod_info.get('display_name', mod_info.get('mod_name', mod_id)))
-            item.setText(display_name)
+            # 添加到列表 - 使用display_name作为显示名称，优先级最高
+            display_name = mod_info.get('display_name', mod_info.get('name', mod_info.get('mod_name', mod_id)))
+            item = QListWidgetItem(display_name)
             item.setData(Qt.UserRole, mod_id)
-            item.setToolTip(f"{display_name}\n{mod_info.get('size','--')} MB")
             
-            # 如果处于编辑模式，添加复选框
-            if is_edit_mode:
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Unchecked)
-                # 设置复选框样式
-                item.setFont(QFont("Microsoft YaHei UI", 9))
+            status_text = "已启用" if is_enabled else "已禁用"
+            item.setToolTip(f"{display_name}\n大小: {mod_info.get('size','--')} MB\n状态: {status_text}")
+            
+            # 根据状态设置文字颜色
+            if is_enabled:
+                item.setForeground(QColor("#f5e0dc")) # 正常亮色
+            else:
+                item.setForeground(QColor("#6c7086")) # 禁用时灰色
+            
+            # 为所有项添加复选框
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            # 保持其当前勾选状态，或者默认为未勾选
+            item.setCheckState(Qt.Unchecked)
             
             print(f"[调试] refresh_mod_list: 添加MOD到列表: {mod_id}, 显示名称: {display_name}")
             
-            # 设置图标
-            if is_enabled:
-                item.setIcon(QIcon(resource_path('icons/开启-开启.svg')))
-            else:
-                item.setIcon(QIcon(resource_path('icons/关闭-关闭.svg')))
-                
             self.mod_list.addItem(item)
             
             # 记录已添加的MOD ID
@@ -1885,12 +1832,25 @@ class MainWindow(QMainWindow):
                 item = self.mod_list.item(i)
                 if item.data(Qt.UserRole) == selected_mod_id:
                     self.mod_list.setCurrentItem(item)
+                    self.on_mod_list_clicked(item)  # 触发信息面板更新
                     found = True
                     print(f"[调试] refresh_mod_list: 恢复选中MOD: {selected_mod_id}")
                     break
             
             if not found:
                 print(f"[警告] refresh_mod_list: 未能找到之前选中的MOD: {selected_mod_id}")
+                self.clear_info_panel() # 如果找不到，清空信息面板
+        else:
+            # 如果之前就没有选中项，也清空信息面板，确保UI一致性
+            if self.mod_list.count() > 0:
+                 # 自动选中第一个
+                self.mod_list.setCurrentRow(0)
+                self.on_mod_list_clicked(self.mod_list.item(0))
+            else:
+                self.clear_info_panel()
+        
+        # 更新全选框的状态，但不触发信号
+        self.update_select_all_checkbox_state()
         
         # 更新状态栏
         self.update_status_info()
@@ -1900,119 +1860,40 @@ class MainWindow(QMainWindow):
         if not item:
             self.clear_info_panel()
             return
-            
         mod_id = item.data(Qt.UserRole)
-        mods = self.config.get_mods()
-        mod_info = mods.get(mod_id)
-        
-        if mod_info:
-            print(f"[调试] on_mod_list_clicked: 显示MOD信息: {mod_id}")
-            self.show_mod_info(mod_info)
-        else:
-            print(f"[警告] on_mod_list_clicked: 找不到MOD信息: {mod_id}")
-            self.clear_info_panel()
+        print(f"[调试] on_mod_list_clicked: 显示MOD信息: {mod_id}")
+        self.show_mod_info(mod_id)
 
     def rename_mod(self):
         item = self.mod_list.currentItem()
         if not item:
             return
+            
         mod_id = item.data(Qt.UserRole)
-        mods = self.config.get_mods()
-        mod_info = mods.get(mod_id)
+        mod_info = self.config.get_mod(mod_id)
         if not mod_info:
-            print(f"[错误] rename_mod: 找不到MOD信息: {mod_id}")
+            self.show_message("错误", f"找不到MOD '{mod_id}' 的信息。")
             return
             
-        print(f"[调试] rename_mod: 开始重命名MOD {mod_id}, 当前名称: {mod_info.get('name', mod_id)}")
+        current_display_name = mod_info.get('display_name', mod_id)
         
-        new_name, ok = self.input_dialog(self.tr('修改MOD名称'), self.tr('请输入新的MOD名称：'), mod_info.get('name',''))
-        if ok and new_name and new_name != mod_info.get('name',''):
-            print(f"[调试] rename_mod: 用户输入新名称: {new_name}")
+        new_name, ok = self.input_dialog(self.tr('修改MOD名称'), self.tr('请输入新的MOD名称：'), current_display_name)
+        
+        if ok and new_name and new_name != current_display_name:
+            print(f"[调试] rename_mod: 用户为 {mod_id} 输入新名称: {new_name}")
             
-            # 保存原始名称，如果还没有保存过
-            if not mod_info.get('real_name'):
-                mod_info['real_name'] = mod_info.get('name', mod_id)
-                print(f"[调试] rename_mod: 保存原始名称: {mod_info['real_name']}")
-            
-            # 保存预览图路径，以便后续检查
-            old_preview_image = mod_info.get('preview_image', '')
-            if old_preview_image:
-                print(f"[调试] rename_mod: 记录原预览图路径: {old_preview_image}")
-            
-            # 备份当前MOD信息，以防更新MOD ID后找不到
-            old_mod_info = mod_info.copy()
-            
-            # 更新显示名称
-            mod_info['name'] = new_name
-            print(f"[调试] rename_mod: 更新MOD名称: {mod_id} -> {new_name}")
-            
-            # 更新MOD信息（这里会处理MOD ID的变更）
+            # 更新MOD信息中的display_name
+            mod_info['display_name'] = new_name
+            # 保存到配置中
             self.config.update_mod(mod_id, mod_info)
             
-            # 重新获取MOD列表，因为MOD ID可能已经改变
-            mods = self.config.get_mods()
-            print(f"[调试] rename_mod: 更新后的MOD列表: {list(mods.keys())}")
+            # 更新当前列表项的显示文本
+            item.setText(new_name)
             
-            # 如果MOD ID更改了，需要使用新ID
-            new_mod_id = new_name
-            if new_mod_id not in mods:
-                print(f"[警告] rename_mod: 新MOD ID {new_mod_id} 不在MOD列表中，尝试查找...")
-                # 尝试通过原始名称找到MOD
-                for mid, minfo in mods.items():
-                    if minfo.get('real_name') == mod_info.get('real_name'):
-                        new_mod_id = mid
-                        print(f"[调试] rename_mod: 找到匹配的MOD ID: {new_mod_id}")
-                        break
+            # 同时更新C1区信息面板
+            self.show_mod_info(mod_id)
             
-            # 获取更新后的MOD信息
-            updated_mod_info = mods.get(new_mod_id)
-            if updated_mod_info:
-                # 检查预览图路径是否已更新
-                new_preview_image = updated_mod_info.get('preview_image', '')
-                if old_preview_image and old_preview_image != new_preview_image:
-                    print(f"[调试] rename_mod: 预览图路径已更新: {old_preview_image} -> {new_preview_image}")
-                
-                # 检查新预览图路径是否存在
-                if new_preview_image and not os.path.exists(new_preview_image):
-                    print(f"[警告] rename_mod: 新预览图路径不存在: {new_preview_image}，尝试修复")
-                    
-                    # 获取备份路径
-                    backup_path = self.config.get_backup_path()
-                    if not backup_path:
-                        backup_path = os.path.join(os.getcwd(), "modbackup")
-                    backup_path = Path(backup_path)
-                    
-                    # 检查新MOD备份目录中的预览图
-                    mod_backup_dir = backup_path / new_mod_id
-                    if mod_backup_dir.exists():
-                        preview_files = list(mod_backup_dir.glob("preview.*"))
-                        if preview_files:
-                            fixed_preview_image = str(preview_files[0])
-                            print(f"[调试] rename_mod: 找到正确的预览图: {fixed_preview_image}")
-                            updated_mod_info['preview_image'] = fixed_preview_image
-                            self.config.update_mod(new_mod_id, updated_mod_info)
-            else:
-                print(f"[警告] rename_mod: 无法获取更新后的MOD信息: {new_mod_id}")
-            
-            # 刷新显示
-            self.refresh_mod_list()
-            
-            # 选中刚刚重命名的MOD
-            found = False
-            for i in range(self.mod_list.count()):
-                list_item = self.mod_list.item(i)
-                if list_item.data(Qt.UserRole) == new_mod_id:
-                    self.mod_list.setCurrentItem(list_item)
-                    self.on_mod_list_clicked(list_item)
-                    found = True
-                    print(f"[调试] rename_mod: 已选中重命名后的MOD: {new_mod_id}")
-                    break
-            
-            if not found:
-                print(f"[警告] rename_mod: 无法在列表中找到重命名后的MOD: {new_mod_id}")
-                # 尝试刷新整个MOD列表
-                self.load_mods()
-                self.refresh_mod_list()
+            self.show_message("成功", f"MOD '{mod_id}' 已重命名为 '{new_name}'。")
 
     def change_mod_preview(self):
         item = self.mod_list.currentItem()
@@ -2033,62 +1914,11 @@ class MainWindow(QMainWindow):
                 print(f"[调试] change_mod_preview: 选择的图片路径: {file_path}")
                 
                 # 使用mod_manager的方法设置预览图，确保图片被备份
-                result = self.mod_manager.set_preview_image(mod_id, file_path)
-                if not result:
-                    raise ValueError("设置预览图失败")
+                self.mod_manager.set_preview_image(mod_id, file_path)
                 
-                # 重新获取更新后的mod_info
-                mods = self.config.get_mods()
-                mod_info = mods.get(mod_id, {})
-                
-                print(f"[调试] change_mod_preview: 更新后的MOD信息: {mod_info}")
-                
-                # 确保预览图路径存在
-                preview_image = mod_info.get('preview_image', '')
-                if preview_image and not os.path.exists(preview_image):
-                    print(f"[警告] change_mod_preview: 预览图路径不存在: {preview_image}，尝试修复")
-                    
-                    # 获取备份路径
-                    backup_path = Path(self.config.get_backup_path())
-                    if not backup_path or not str(backup_path).strip():
-                        backup_path = Path(os.getcwd()) / "modbackup"
-                    
-                    # 检查MOD备份目录
-                    mod_backup_dir = backup_path / mod_id
-                    if mod_backup_dir.exists():
-                        preview_files = list(mod_backup_dir.glob("preview.*"))
-                        if preview_files:
-                            preview_image = str(preview_files[0])
-                            print(f"[调试] change_mod_preview: 找到正确的预览图: {preview_image}")
-                            mod_info['preview_image'] = preview_image
-                            self.config.update_mod(mod_id, mod_info)
-                
-                # 刷新显示
-                self.show_mod_info(mod_info)
-                self.statusBar().showMessage('预览图已更新', 3000)
-                
-                # 确保备份目录中有预览图
-                backup_path = Path(self.config.get_backup_path())
-                if not backup_path or not str(backup_path).strip():
-                    backup_path = Path(os.getcwd()) / "modbackup"
-                
-                mod_backup_dir = backup_path / mod_id
-                if not mod_backup_dir.exists():
-                    print(f"[调试] change_mod_preview: 创建MOD备份目录: {mod_backup_dir}")
-                    mod_backup_dir.mkdir(parents=True, exist_ok=True)
-                
-                # 复制预览图到备份目录
-                preview_path = mod_backup_dir / f"preview{Path(file_path).suffix}"
-                if not preview_path.exists() or not preview_path.samefile(file_path):
-                    print(f"[调试] change_mod_preview: 复制预览图到备份目录: {preview_path}")
-                    shutil.copy2(file_path, preview_path)
-                
-                # 更新MOD信息中的预览图路径
-                mod_info['preview_image'] = str(preview_path)
-                self.config.update_mod(mod_id, mod_info)
-                
-                # 再次刷新显示，确保预览图正确显示
+                # 刷新列表和信息，保持选中状态
                 self.refresh_mod_list(keep_selected=True)
+                self.statusBar().showMessage('预览图已更新', 3000)
                 
             except Exception as e:
                 print(f"[错误] change_mod_preview: 更新预览图失败: {e}")
@@ -2959,28 +2789,24 @@ class MainWindow(QMainWindow):
         print(f"[调试] mod_list_start_drag: 拖拽完成，结果: {result}, 拖拽的MOD: {mod_ids_str}")
             
     def get_selected_mod_items(self):
-        """获取选中的MOD项目（包括复选框选中的项目）
+        """获取选中的MOD项目（优先使用复选框选中的项目）
         
         Returns:
             list: 选中的MOD项目列表
         """
-        # 获取常规选中的项目
-        selected_items = self.mod_list.selectedItems()
+        # 优先获取所有复选框选中的项目
+        checked_items = []
+        for i in range(self.mod_list.count()):
+            item = self.mod_list.item(i)
+            if item and item.checkState() == Qt.Checked:
+                checked_items.append(item)
         
-        # 如果处于编辑模式，检查复选框选中的项目
-        if self.edit_mode_cb.isChecked():
-            # 获取所有复选框选中的项目
-            checked_items = []
-            for i in range(self.mod_list.count()):
-                item = self.mod_list.item(i)
-                if item and item.checkState() == Qt.Checked:
-                    checked_items.append(item)
+        # 如果有复选框选中的项目，就返回它们
+        if checked_items:
+            return checked_items
             
-            # 如果有复选框选中的项目，使用它们
-            if checked_items:
-                return checked_items
-        
-        return selected_items
+        # 否则，返回当前高亮选中的项目
+        return self.mod_list.selectedItems()
             
     def open_toolbox(self):
         """打开收集工具箱网页"""
@@ -3303,3 +3129,37 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.statusBar().showMessage('移动MOD失败！', 3000)
             self.show_message('错误', f'移动MOD失败：{str(e)}')
+
+    def on_select_all_changed(self, state):
+        """处理全选复选框状态改变事件"""
+        # 暂时断开itemChanged信号，防止循环触发
+        self.mod_list.itemChanged.disconnect(self.on_mod_item_changed)
+        
+        check_state = Qt.CheckState(state)
+        for i in range(self.mod_list.count()):
+            item = self.mod_list.item(i)
+            item.setCheckState(check_state)
+            
+        # 重新连接itemChanged信号
+        self.mod_list.itemChanged.connect(self.on_mod_item_changed)
+
+    def on_mod_item_changed(self, item):
+        """处理MOD列表项勾选状态改变事件，用于同步全选框"""
+        self.update_select_all_checkbox_state()
+
+    def update_select_all_checkbox_state(self):
+        """根据列表项的勾选状态更新"全选"复选框的状态"""
+        total_items = self.mod_list.count()
+        if total_items == 0:
+            is_all_checked = False
+        else:
+            checked_items = 0
+            for i in range(total_items):
+                if self.mod_list.item(i).checkState() == Qt.Checked:
+                    checked_items += 1
+            is_all_checked = (checked_items == total_items)
+
+        # 阻塞信号以避免触发on_select_all_changed
+        self.select_all_cb.blockSignals(True)
+        self.select_all_cb.setChecked(is_all_checked)
+        self.select_all_cb.blockSignals(False)

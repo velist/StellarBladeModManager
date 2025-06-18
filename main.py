@@ -3,7 +3,7 @@ import os
 import traceback
 import logging
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QWidget, QInputDialog
 from PySide6.QtCore import Qt, QTranslator, QLocale
 from PySide6.QtGui import QIcon, QFont
 from ui.main_window import MainWindow
@@ -75,23 +75,51 @@ def initialize_config(config):
         locator = GameLocator()
         game_paths = locator.find_game_paths()
         
+        game_path_to_use = None
+        
         if game_paths:
-            print(f"[调试] 找到游戏路径: {game_paths}")
-            config.set_game_path(game_paths[0])  # 使用第一个找到的路径
-            game_dir = os.path.dirname(game_paths[0])
+            if len(game_paths) == 1:
+                game_path_to_use = game_paths[0]
+            else:
+                # 让用户从找到的多个路径中选择一个
+                path, ok = QInputDialog.getItem(
+                    None, '选择游戏路径', '找到多个游戏路径，请选择一个:', 
+                    game_paths, 0, False
+                )
+                if ok and path:
+                    game_path_to_use = path
+        
+        if game_path_to_use:
+            print(f"[调试] 使用游戏路径: {game_path_to_use}")
+            config.set_game_path(game_path_to_use)
+            game_dir = Path(game_path_to_use).parent.parent.parent.parent # 从 .../SB/Binaries/Win64/SB...exe 回退到游戏根目录
             
-            # 尝试设置MOD路径
-            mods_path = os.path.join(game_dir, "SB", "Content", "Paks", "~mods")
-            mods_path_dir = Path(mods_path)
-            if not mods_path_dir.exists():
-                try:
-                    mods_path_dir.mkdir(parents=True, exist_ok=True)
-                    print(f"[调试] 创建MOD目录: {mods_path}")
-                except Exception as e:
-                    print(f"[警告] 创建MOD目录失败: {str(e)}")
-            
-            config.set_mods_path(mods_path)
-            print(f"[调试] 设置MOD文件夹: {mods_path}")
+            # 自动查找~mods文件夹并请求确认
+            potential_mods_path = game_dir / "SB" / "Content" / "Paks" / "~mods"
+            if potential_mods_path.exists():
+                reply = QMessageBox.question(None, "确认MOD文件夹", 
+                                             f"已找到MOD文件夹，是否使用此路径？\n\n{potential_mods_path}",
+                                             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                if reply == QMessageBox.Yes:
+                    config.set_mods_path(str(potential_mods_path))
+                    print(f"[调试] 用户确认使用自动找到的MOD文件夹: {potential_mods_path}")
+                else:
+                    # 用户选择手动设置
+                    mods_path = QFileDialog.getExistingDirectory(None, "请手动选择MOD文件夹（~mods）")
+                    if mods_path:
+                        config.set_mods_path(mods_path)
+                    else:
+                        config.set_mods_path(str(potential_mods_path)) # 取消选择则使用默认
+                        QMessageBox.information(None, "提示", f"已使用推荐的MOD文件夹:\n{potential_mods_path}")
+            else:
+                # 如果没找到，让用户手动选择
+                potential_mods_path.mkdir(parents=True, exist_ok=True)
+                QMessageBox.information(None, "提示", f"未找到~mods文件夹，已为您自动创建。\n请选择MOD文件夹（~mods）")
+                mods_path = QFileDialog.getExistingDirectory(None, "选择MOD文件夹（~mods）", str(potential_mods_path))
+                if mods_path:
+                    config.set_mods_path(mods_path)
+                else:
+                    config.set_mods_path(str(potential_mods_path)) # 取消选择则使用默认
             
             # 设置备份路径 - 先使用默认路径
             default_backup_path = os.path.join(os.getcwd(), "modbackup")
@@ -141,7 +169,7 @@ def initialize_config(config):
             # 提示用户选择游戏可执行文件
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Information)
-            msg.setText("未能自动找到游戏路径，请手动选择游戏可执行文件 (SB.exe)")
+            msg.setText("未能自动找到游戏路径，请手动选择游戏可执行文件 (SB-Win64-Shipping.exe)")
             msg.setWindowTitle("选择游戏路径")
             msg.exec()
             
@@ -153,27 +181,27 @@ def initialize_config(config):
                 "可执行文件 (*.exe)"
             )
             
-            if game_path:
+            if game_path and 'SB-Win64-Shipping.exe' in game_path:
                 config.set_game_path(game_path)
                 print(f"[调试] 手动设置游戏路径: {game_path}")
                 
                 # 尝试设置MOD路径
-                game_dir = os.path.dirname(game_path)
-                mods_path = os.path.join(game_dir, "SB", "Content", "Paks", "~mods")
-                mods_path_dir = Path(mods_path)
-                if not mods_path_dir.exists():
+                game_dir = Path(game_path).parent.parent.parent.parent # 从 .../SB/Binaries/Win64/SB...exe 回退到游戏根目录
+                mods_path = game_dir / "SB" / "Content" / "Paks" / "~mods"
+                if not mods_path.exists():
                     try:
-                        mods_path_dir.mkdir(parents=True, exist_ok=True)
+                        mods_path.mkdir(parents=True, exist_ok=True)
                         print(f"[调试] 创建MOD目录: {mods_path}")
                     except Exception as e:
                         print(f"[错误] 创建MOD目录失败: {str(e)}")
                         # 尝试请求用户手动选择MOD目录
-                        mods_path = QFileDialog.getExistingDirectory(
+                        mods_path_str = QFileDialog.getExistingDirectory(
                             None, 
                             "选择MOD文件夹"
                         )
+                        mods_path = Path(mods_path_str) if mods_path_str else mods_path
                 
-                config.set_mods_path(mods_path)
+                config.set_mods_path(str(mods_path))
                 print(f"[调试] 设置MOD文件夹: {mods_path}")
                 
                 # 设置备份路径 - 先使用默认路径
@@ -218,8 +246,8 @@ def initialize_config(config):
                 config.set_initialized(True)
                 return True
             else:
-                print("[错误] 用户未选择游戏路径")
-                QMessageBox.critical(None, "错误", "未选择游戏路径，程序将退出。")
+                print("[错误] 用户未选择游戏路径或选择了错误的EXE")
+                QMessageBox.critical(None, "错误", "未选择正确的游戏路径 (SB-Win64-Shipping.exe)，程序将退出。")
                 return False
     except Exception as e:
         print(f"[错误] 初始化配置失败: {str(e)}")

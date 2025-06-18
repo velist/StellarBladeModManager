@@ -1,19 +1,44 @@
 {
     "language": "zh",
     "categories": {
-        "默认分类": [],
-        "2": [],
-        "3": [],
-        "4": []
+        "默认分类": []
     },
-    "category_timestamps": {
-        "默认分类": 0
-    },
-    "default_category_name": "默认分类",
     "mods_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods",
     "backup_path": "D:\\cursor\\1.5版本\\1.53版本\\modbackup",
-    "game_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB.exe",
+    "game_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Binaries\\Win64\\SB-Win64-Shipping.exe",
     "mods": {
+        "Lyws_Deathbringers_064e_P": {
+            "name": "Lyws_Deathbringers_064e_P",
+            "files": [
+                "Lyws_Deathbringers_064e_P\\Lyws_Deathbringers_064e_P.pak",
+                "Lyws_Deathbringers_064e_P\\Lyws_Deathbringers_064e_P.ucas",
+                "Lyws_Deathbringers_064e_P\\Lyws_Deathbringers_064e_P.utoc"
+            ],
+            "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\Lyws_Deathbringers_064e_P\\Lyws_Deathbringers_064e_P.pak",
+            "import_date": "2025-06-18 00:54:51",
+            "enabled": true,
+            "size": 0.0,
+            "folder_structure": true,
+            "folder_name": "Lyws_Deathbringers_064e_P",
+            "display_name": "Lyws_Deathbringers_064e_P",
+            "mod_name": "Lyws_Deathbringers_064e_P"
+        },
+        "StellarClubGirlV1.2_P": {
+            "name": "StellarClubGirlV1.2_P",
+            "files": [
+                "StellarClubGirlV1.2_P\\StellarClubGirlV1.2_P.pak",
+                "StellarClubGirlV1.2_P\\StellarClubGirlV1.2_P.ucas",
+                "StellarClubGirlV1.2_P\\StellarClubGirlV1.2_P.utoc"
+            ],
+            "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\StellarClubGirlV1.2_P\\StellarClubGirlV1.2_P.pak",
+            "import_date": "2025-06-18 00:54:51",
+            "enabled": true,
+            "size": 0.0,
+            "folder_structure": true,
+            "folder_name": "StellarClubGirlV1.2_P",
+            "display_name": "StellarClubGirlV1.2_P",
+            "mod_name": "StellarClubGirlV1.2_P"
+        },
         "CatSuitDivingSuit7th_P": {
             "name": "CatSuitDivingSuit7th_P",
             "files": [
@@ -22,61 +47,14 @@
                 "CatSuitDivingSuit7th_P\\CatSuitDivingSuit7th_P.utoc"
             ],
             "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\CatSuitDivingSuit7th_P\\CatSuitDivingSuit7th_P.pak",
-            "import_date": "2025-06-16 02:26:41",
+            "import_date": "2025-06-18 00:54:51",
             "enabled": true,
             "size": 0.0,
             "folder_structure": true,
             "folder_name": "CatSuitDivingSuit7th_P",
-            "display_name": "CatSuitDivingSuit7th_P",
-            "mod_name": "CatSuitDivingSuit7th_P"
-        },
-        "Lemi21_LatexBattlesuit_P": {
-            "name": "Lemi21_LatexBattlesuit_P",
-            "files": [
-                "Lemi21_LatexBattlesuit_P\\Lemi21_LatexBattlesuit_P.pak",
-                "Lemi21_LatexBattlesuit_P\\Lemi21_LatexBattlesuit_P.ucas",
-                "Lemi21_LatexBattlesuit_P\\Lemi21_LatexBattlesuit_P.utoc"
-            ],
-            "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\Lemi21_LatexBattlesuit_P\\Lemi21_LatexBattlesuit_P.pak",
-            "import_date": "2025-06-16 02:26:41",
-            "enabled": true,
-            "size": 0.0,
-            "folder_structure": true,
-            "folder_name": "Lemi21_LatexBattlesuit_P",
-            "display_name": "Lemi21_LatexBattlesuit_P",
-            "mod_name": "Lemi21_LatexBattlesuit_P"
-        },
-        "SkinsuitEdit_P": {
-            "name": "SkinsuitEdit_P",
-            "files": [
-                "SkinsuitEdit_P\\SkinsuitEdit_P.pak",
-                "SkinsuitEdit_P\\SkinsuitEdit_P.ucas",
-                "SkinsuitEdit_P\\SkinsuitEdit_P.utoc"
-            ],
-            "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\SkinsuitEdit_P\\SkinsuitEdit_P.pak",
-            "import_date": "2025-06-16 02:26:41",
-            "enabled": true,
-            "size": 0.0,
-            "folder_structure": true,
-            "folder_name": "SkinsuitEdit_P",
-            "display_name": "SkinsuitEdit_P",
-            "mod_name": "SkinsuitEdit_P"
-        },
-        "EVE_P": {
-            "name": "EVE_P",
-            "files": [
-                "EVE_P\\EVE_P.pak",
-                "EVE_P\\EVE_P.ucas",
-                "EVE_P\\EVE_P.utoc"
-            ],
-            "original_path": "D:\\Steam\\steamapps\\common\\StellarBlade\\SB\\Content\\Paks\\~mods\\EVE_P\\EVE_P.pak",
-            "import_date": "2025-06-16 22:41:07",
-            "enabled": true,
-            "size": 0.0,
-            "folder_structure": true,
-            "folder_name": "EVE_P",
-            "display_name": "EVE_P",
-            "mod_name": "EVE_P"
+            "display_name": "猫女郎",
+            "mod_name": "CatSuitDivingSuit7th_P",
+            "real_name": "CatSuitDivingSuit7th_P"
         }
     },
     "game_path_notified": false,

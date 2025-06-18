@@ -916,3 +916,9 @@ class ConfigManager:
             print(f"[调试] update_mod_categories: 已更新 {updated_count} 个MOD的分类信息")
         
         return updated_count 
+
+    def rename_mod_id(self, old_id, new_id):
+        """重命名MOD的ID（通常是名称），并重命名备份文件夹"""
+        # 此功能已废弃，以避免文件系统问题。重命名现在只修改显示名称。
+        print("[警告] rename_mod_id (in config_manager.py) is deprecated.")
+        return False 

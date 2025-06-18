@@ -41,16 +41,22 @@ class GameLocator:
         exe_paths = []
         
         # 检查常见的可执行文件名
-        exe_names = ['SB.exe', 'StellarBlade.exe', 'StellarBlade-Win64-Shipping.exe']
+        exe_names = ['SB-Win64-Shipping.exe']
         for exe_name in exe_names:
+            # 优先查找SB/Binaries/Win64子目录
+            binary_path = path / 'SB' / 'Binaries' / 'Win64' / exe_name
+            if binary_path.exists():
+                exe_paths.append(str(binary_path))
+            
+            # 其次查找根目录
             exe_path = path / exe_name
-            if exe_path.exists():
+            if exe_path.exists() and str(exe_path) not in exe_paths:
                 exe_paths.append(str(exe_path))
                 
         # 如果没有找到，尝试递归查找
         if not exe_paths:
             try:
-                for item in path.glob('**/*.exe'):
+                for item in path.glob('**/SB-Win64-Shipping.exe'):
                     if item.name in exe_names:
                         exe_paths.append(str(item))
             except Exception:
@@ -91,14 +97,16 @@ class GameLocator:
     def _is_valid_game_path(self, path):
         """验证是否为有效的游戏目录"""
         required_files = [
-            'SB.exe',
-            'StellarBlade.exe',
-            'StellarBlade-Win64-Shipping.exe'
+            'SB-Win64-Shipping.exe'
         ]
         
         # 检查游戏可执行文件
         for file in required_files:
+            # 检查根目录
             if (path / file).exists():
+                return True
+            # 检查二进制文件目录
+            if (path / 'SB' / 'Binaries' / 'Win64' / file).exists():
                 return True
                 
         return False 
