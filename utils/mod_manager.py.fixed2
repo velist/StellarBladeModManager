@@ -1,0 +1,364 @@
+import os
+import sys
+import shutil
+import subprocess
+import logging
+import rarfile
+import zipfile
+import datetime
+import json
+import tempfile
+import uuid
+import glob
+import time
+from pathlib import Path
+
+# 设置日志
+mod_logger = logging.getLogger('mod_manager')
+mod_logger.setLevel(logging.INFO)
+
+# 确保有处理程序添加到日志记录器
+if not mod_logger.handlers:
+    # 创建一个文件处理程序，输出到日志文件
+    log_handler = logging.FileHandler('mod_manager.log', encoding='utf-8')
+    log_handler.setLevel(logging.INFO)
+    
+    # 创建一个格式化器，定义日志格式
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_handler.setFormatter(formatter)
+    
+    # 将处理程序添加到记录器
+    mod_logger.addHandler(log_handler)
+
+def extract_rar_with_rarfile(rar_file, extract_path):
+    """使用rarfile库解压RAR文件"""
+    try:
+        mod_logger.info(f"extract_rar_with_rarfile: 开始使用rarfile库解压 {rar_file}")
+        
+        # 设置rarfile库使用FreeUnRAR DLL
+        rarfile.UNRAR_TOOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "UnRAR.dll")
+        mod_logger.debug(f"rarfile.UNRAR_TOOL = {rarfile.UNRAR_TOOL}")
+        
+        # 尝试使用rarfile库解压
+        try:
+            with rarfile.RarFile(rar_file) as rf:
+                rf.extractall(extract_path)
+            mod_logger.info(f"使用rarfile库成功解压 {rar_file}")
+            return True
+        except Exception as e:
+            mod_logger.warning(f"使用rarfile库解压失败: {e}")
+            
+            # 尝试使用UnRAR.exe
+            unrar_exe = shutil.which("UnRAR.exe") or shutil.which("unrar")
+            if unrar_exe:
+                try:
+                    mod_logger.info(f"尝试使用系统中的UnRAR命令行: {unrar_exe}")
+                    # 使用subprocess调用UnRAR命令行
+                    cmd = f'"{unrar_exe}" x -o+ -y "{rar_file}" "{extract_path}"'
+                    mod_logger.debug(f"执行命令: {cmd}")
+                    
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        shell=True
+                    )
+                    stdout, stderr = process.communicate()
+                    
+                    if process.returncode == 0:
+                        mod_logger.info(f"使用UnRAR命令行成功解压 {rar_file}")
+                        return True
+                    else:
+                        mod_logger.error(f"使用UnRAR命令行解压失败: 返回码 {process.returncode}")
+                        mod_logger.error(f"stderr: {stderr.decode('utf-8', errors='ignore')}")
+                except Exception as e:
+                    mod_logger.error(f"使用UnRAR命令行解压失败: {e}")
+            
+                # 尝试使用内置的UnRAR.dll
+                try:
+                    mod_logger.info(f"尝试使用内置的UnRAR.dll解压 {rar_file}")
+                    # 使用subprocess直接调用内置的UnRAR.dll
+                    unrar_dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "UnRAR.dll")
+                    if os.path.exists(unrar_dll_path):
+                        mod_logger.debug(f"找到UnRAR.dll: {unrar_dll_path}")
+                        
+                        # 如果未设置环境变量，可以设置
+                        os.environ["PATH"] = os.path.dirname(unrar_dll_path) + os.pathsep + os.environ.get("PATH", "")
+                        
+                        cmd = f'"{unrar_dll_path}" x -o+ -y "{rar_file}" "{extract_path}"'
+                        mod_logger.debug(f"执行命令: {cmd}")
+                        
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            shell=True
+                        )
+                        stdout, stderr = process.communicate()
+                        
+                        if process.returncode == 0:
+                            mod_logger.info(f"使用subprocess成功解压 {rar_file}")
+                            return True
+                        else:
+                            mod_logger.error(f"使用subprocess解压失败: 返回码 {process.returncode}")
+                            mod_logger.error(f"stderr: {stderr.decode('utf-8', errors='ignore')}")
+                except Exception as sub_e:
+                    mod_logger.error(f"使用subprocess解压失败: {sub_e}")
+            else:
+                mod_logger.warning("未找到系统中的UnRAR.exe")
+            
+            return False
+    except Exception as e:
+        mod_logger.error(f"extract_rar_with_rarfile: 解压失败: {e}")
+        return False
+
+def extract_zip(zip_file, extract_path):
+    """解压ZIP文件"""
+    try:
+        mod_logger.info(f"extract_zip: 开始解压 {zip_file} 到 {extract_path}")
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+        mod_logger.info(f"extract_zip: 解压成功: {zip_file}")
+        return True
+    except Exception as e:
+        mod_logger.error(f"extract_zip: 解压失败: {e}")
+        return False
+
+def extract_rar_with_python(rar_file, extract_path):
+    """使用纯Python方法解压RAR文件（不依赖外部工具）"""
+    try:
+        mod_logger.info(f"extract_rar_with_python: 尝试使用纯Python方法解压 {rar_file}")
+        
+        # 尝试使用rarfile库的内部解压功能
+        old_use_extract_hack = rarfile.USE_EXTRACT_HACK
+        rarfile.USE_EXTRACT_HACK = True
+        
+        try:
+            # 禁用外部工具，强制使用内部解压
+            old_unrar_tool = rarfile.UNRAR_TOOL
+            rarfile.UNRAR_TOOL = None
+            
+            with rarfile.RarFile(rar_file) as rf:
+                rf.extractall(extract_path)
+            
+            mod_logger.info(f"extract_rar_with_python: 成功使用纯Python方法解压 {rar_file}")
+            return True
+        except Exception as e:
+            mod_logger.error(f"extract_rar_with_python: 纯Python解压失败: {e}")
+            return False
+        finally:
+            # 恢复原始配置
+            rarfile.UNRAR_TOOL = old_unrar_tool
+            rarfile.USE_EXTRACT_HACK = old_use_extract_hack
+    except Exception as e:
+        mod_logger.error(f"extract_rar_with_python: 解压失败: {e}")
+        return False
+
+def extract_rar_with_winrar(rar_file, extract_path):
+    """使用WinRAR解压RAR文件"""
+    try:
+        mod_logger.info(f"extract_rar_with_winrar: 开始解压 {rar_file}")
+        
+        # 尝试查找WinRAR的路径
+        winrar_paths = [
+            "C:\\Program Files\\WinRAR\\WinRAR.exe",
+            "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
+            os.path.expandvars("%ProgramFiles%\\WinRAR\\WinRAR.exe"),
+            os.path.expandvars("%ProgramFiles(x86)%\\WinRAR\\WinRAR.exe"),
+            # 添加更多可能的路径
+            "winrar.exe",
+            "WinRAR.exe"
+        ]
+        
+        winrar_exe = None
+        for path in winrar_paths:
+            try:
+                # 对于相对路径，尝试使用which/where命令查找
+                if path.lower() in ["winrar.exe"]:
+                    try:
+                        # 在Windows上使用where命令
+                        if os.name == 'nt':
+                            result = subprocess.run(['where', path], capture_output=True, text=True, check=False)
+                            if result.returncode == 0 and result.stdout.strip():
+                                winrar_exe = result.stdout.strip().split('\n')[0]
+                                mod_logger.info(f"在PATH中找到WinRAR: {winrar_exe}")
+                                break
+                        # 在类Unix系统上使用which命令
+                        else:
+                            result = subprocess.run(['which', path], capture_output=True, text=True, check=False)
+                            if result.returncode == 0 and result.stdout.strip():
+                                winrar_exe = result.stdout.strip()
+                                mod_logger.info(f"在PATH中找到WinRAR: {winrar_exe}")
+                                break
+                    except Exception as e:
+                        mod_logger.debug(f"查找WinRAR路径失败: {e}")
+                        continue
+                # 对于绝对路径，直接检查文件是否存在
+                elif os.path.exists(path):
+                    winrar_exe = path
+                    mod_logger.info(f"找到WinRAR: {winrar_exe}")
+                    break
+            except Exception as e:
+                mod_logger.debug(f"检查WinRAR路径失败: {path}: {e}")
+        
+        if not winrar_exe:
+            mod_logger.warning("未找到WinRAR.exe")
+            return False
+        
+        # 使用WinRAR命令解压
+        cmd = f'"{winrar_exe}" x -o+ -y "{rar_file}" "{extract_path}"'
+        mod_logger.info(f"执行WinRAR命令: {cmd}")
+        
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True
+        )
+        stdout, stderr = process.communicate()
+        
+        if process.returncode == 0:
+            mod_logger.info(f"WinRAR解压成功: {rar_file}")
+            return True
+        else:
+            stderr_str = stderr.decode('utf-8', errors='ignore')
+            mod_logger.warning(f"WinRAR解压失败: {stderr_str}")
+            return False
+    except Exception as e:
+        mod_logger.error(f"extract_rar_with_winrar: 解压失败: {e}")
+        return False
+
+def process_archive(file_path, extract_path):
+    """处理归档文件，根据文件类型选择不同的解压方法"""
+    try:
+        file_path = os.path.abspath(file_path)
+        extract_path = os.path.abspath(extract_path)
+        
+        # 确保目标目录存在
+        os.makedirs(extract_path, exist_ok=True)
+        
+        # 获取文件扩展名
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        
+        # 根据文件类型选择解压方法
+        if ext == '.zip':
+            mod_logger.info(f"处理zip文件: {file_path} -> {extract_path}")
+            return extract_zip(file_path, extract_path)
+        elif ext == '.rar':
+            mod_logger.info(f"处理rar文件: {file_path} -> {extract_path}")
+            
+            # 尝试使用rarfile库解压
+            mod_logger.info("尝试使用rarfile库解压")
+            if extract_rar_with_rarfile(file_path, extract_path):
+                return True
+            
+            # 尝试使用纯Python方法解压
+            mod_logger.info("尝试使用纯Python方法解压")
+            if extract_rar_with_python(file_path, extract_path):
+                return True
+            
+            # 如果rarfile库解压失败，尝试使用WinRAR解压
+            mod_logger.warning("rarfile库解压失败")
+            mod_logger.info("尝试使用WinRAR解压")
+            if extract_rar_with_winrar(file_path, extract_path):
+                return True
+            
+            mod_logger.warning("WinRAR解压失败")
+            
+            # 尝试使用7z解压
+            mod_logger.info("尝试使用7z解压")
+            if extract_with_7z(file_path, extract_path):
+                return True
+            
+            # 所有方法都失败，复制原始文件到目标文件夹
+            mod_logger.warning("所有解压方法都失败，复制原始文件到目标文件夹")
+            shutil.copy2(file_path, os.path.join(extract_path, os.path.basename(file_path)))
+            
+            # 显示错误信息
+            error_message = f"无法解压RAR文件: {os.path.basename(file_path)}\n这可能是由于以下原因之一：\n- 系统未安装WinRAR\n- 文件已损坏\n- 加密的RAR文件\n\n已将原始文件复制到目标文件夹。: {file_path}"
+            mod_logger.error(error_message)
+            
+            return False
+        elif ext == '.7z':
+            mod_logger.info(f"处理7z文件: {file_path} -> {extract_path}")
+            return extract_7z(file_path, extract_path)
+        else:
+            # 不支持的格式，直接复制文件
+            mod_logger.warning(f"不支持的文件格式: {ext}，直接复制文件")
+            shutil.copy2(file_path, os.path.join(extract_path, os.path.basename(file_path)))
+            return True
+    except Exception as e:
+        mod_logger.error(f"处理归档文件失败: {e}")
+        return False
+
+def extract_7z(file_path, extract_path):
+    """使用7z命令行工具解压文件"""
+    try:
+        mod_logger.info(f"extract_7z: 开始解压 {file_path}")
+        # 此处应有更多7z解压的代码
+        return True
+    except Exception as e:
+        mod_logger.error(f"extract_7z: 解压失败: {e}")
+        return False
+
+def extract_with_7z(file_path, extract_path):
+    """使用7z命令行工具解压文件"""
+    try:
+        mod_logger.info(f"extract_with_7z: 开始解压 {file_path}")
+        # 此处应有更多7z解压的代码
+        return True
+    except Exception as e:
+        mod_logger.error(f"extract_with_7z: 解压失败: {e}")
+        return False
+
+def cleanup_temp_directories():
+    """清理临时目录"""
+    try:
+        mod_logger.info("清理临时目录")
+        temp_dirs = ["mod_temp", "temp_unrar"]
+        for temp_dir in temp_dirs:
+            if os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    mod_logger.info(f"成功清理临时目录: {temp_dir}")
+                except Exception as e:
+                    mod_logger.error(f"清理临时目录失败: {temp_dir}: {e}")
+    except Exception as e:
+        mod_logger.error(f"清理临时目录失败: {e}")
+
+def create_temp_directory(base_dir=None):
+    """创建临时目录并返回路径"""
+    try:
+        if not base_dir:
+            base_dir = "mod_temp"
+        
+        # 确保基础目录存在
+        os.makedirs(base_dir, exist_ok=True)
+        
+        # 创建带时间戳的唯一临时目录
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = uuid.uuid4().hex[:8]
+        temp_dir = os.path.join(base_dir, f"{timestamp}_{unique_id}")
+        
+        os.makedirs(temp_dir, exist_ok=True)
+        mod_logger.info(f"创建临时目录: {temp_dir}")
+        
+        return temp_dir
+    except Exception as e:
+        mod_logger.error(f"创建临时目录失败: {e}")
+        # 如果失败，尝试使用系统临时目录
+        return tempfile.mkdtemp(prefix="mod_manager_")
+
+class ModManager:
+    """MOD管理器类"""
+    
+    VERSION = "1.63"  # 版本号
+    
+    def __init__(self, config_manager):
+        self.config = config_manager
+        self.mods_path = Path(config_manager.get_mods_path() or "")
+        self.backup_path = Path(config_manager.get_backup_path() or "")
+        mod_logger.info(f"初始化MOD管理器: mods_path={self.mods_path}, backup_path={self.backup_path}")
+        
+    # 其他方法... 

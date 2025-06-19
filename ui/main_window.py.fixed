@@ -1,0 +1,347 @@
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QTreeWidget, QTreeWidgetItem, QLabel, QPushButton,
+    QFileDialog, QMessageBox, QInputDialog, QMenu,
+    QFrame, QSplitter, QDialog, QLineEdit, QTextEdit,
+    QDialogButtonBox, QFormLayout, QToolBar, QToolButton,
+    QStatusBar, QProgressBar, QListWidget, QListWidgetItem,
+    QScrollArea, QAbstractItemView, QCheckBox, QTableWidget, QTableWidgetItem
+)
+from PySide6.QtCore import Qt, QSize, Signal, QThread, QMimeData, QPoint, QByteArray
+from PySide6.QtGui import QAction, QIcon, QPixmap, QFont, QImage, QDrag, QPainter, QColor
+from utils.mod_manager import ModManager
+from utils.config_manager import ConfigManager
+import os
+import uuid
+from pathlib import Path
+import sys
+import json
+import webbrowser  # 导入webbrowser模块用于打开URL
+import shutil  # 导入shutil模块用于复制文件
+
+def resource_path(relative_path):
+    """兼容PyInstaller打包和开发环境的资源路径"""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+class ModListItemWidget(QWidget):
+    """用于MOD列表的自定义控件，显示MOD名称和状态"""
+    def __init__(self, mod_name, is_enabled, parent=None):
+        super().__init__(parent)
+        self.setObjectName("modListItemWidget")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
+
+        name_label = QLabel(mod_name)
+        name_label.setObjectName("modListNameLabel")
+
+        status_label = QLabel("已启用" if is_enabled else "已禁用")
+        status_label.setObjectName(f"statusLabel_{'enabled' if is_enabled else 'disabled'}")
+
+        layout.addWidget(name_label)
+        layout.addStretch()
+        layout.addWidget(status_label)
+        self.setLayout(layout)
+
+class ModInfoDialog(QDialog):
+    def __init__(self, parent=None, mod_info=None):
+        super().__init__(parent)
+        self.mod_info = mod_info or {}
+        self.init_ui()
+        
+    def init_ui(self):
+        self.setWindowTitle('MOD信息')
+        self.setMinimumWidth(400)
+        
+        layout = QFormLayout(self)
+        
+        # 名称输入
+        self.name_edit = QLineEdit(self.mod_info.get('name', ''))
+        layout.addRow('名称:', self.name_edit)
+        
+        # 描述输入
+        self.desc_edit = QTextEdit()
+        self.desc_edit.setPlainText(self.mod_info.get('description', ''))
+        self.desc_edit.setMaximumHeight(100)
+        layout.addRow('描述:', self.desc_edit)
+        
+        # 预览图
+        preview_layout = QHBoxLayout()
+        self.preview_label = QLabel()
+        self.preview_label.setMinimumSize(200, 150)
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setStyleSheet('border: 1px solid #3d3d3d;')
+        
+        if self.mod_info.get('preview_image'):
+            pixmap = QPixmap(self.mod_info['preview_image'])
+            if not pixmap.isNull():
+                self.preview_label.setPixmap(pixmap.scaled(
+                    200, 150, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                ))
+                
+        preview_layout.addWidget(self.preview_label)
+        
+        preview_btn = QPushButton('选择预览图')
+        preview_btn.clicked.connect(self.select_preview)
+        preview_layout.addWidget(preview_btn)
+        
+        layout.addRow('预览图:', preview_layout)
+        
+        # 按钮
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+        
+    def select_preview(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            '选择预览图',
+            '',
+            '图片文件 (*.png *.jpg *.jpeg)'
+        )
+        
+        if file_path:
+            pixmap = QPixmap(file_path)
+            if not pixmap.isNull():
+                self.preview_label.setPixmap(pixmap.scaled(
+                    200, 150, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                ))
+                self.preview_path = file_path
+                
+    def get_mod_info(self):
+        return {
+            'name': self.name_edit.text(),
+            'description': self.desc_edit.toPlainText(),
+            'preview_image': getattr(self, 'preview_path', self.mod_info.get('preview_image', ''))
+        }
+
+class ImportModThread(QThread):
+    finished = Signal(object, str)  # 修改为接收任何类型的结果（单个MOD或MOD列表）
+    def __init__(self, mod_manager, file_path):
+        super().__init__()
+        self.mod_manager = mod_manager
+        self.file_path = file_path
+        self.result = None
+        self.error = None
+    def run(self):
+        try:
+            mod_info = self.mod_manager.import_mod(self.file_path)
+            self.result = mod_info
+            self.error = None
+        except Exception as e:
+            self.result = None
+            self.error = str(e)
+        self.finished.emit(self.result, self.error)
+
+class MainWindow(QMainWindow):
+    def __init__(self, config_manager):
+        super().__init__()
+        self.config = config_manager
+        self.mod_manager = ModManager(config_manager)
+        
+        # 初始化当前激活的标签
+        self.active_tab = "all"
+        
+        # 加载样式表
+        self.load_style()
+        
+        # 检查是否需要设置备份目录
+        if not self.config.get_backup_path():
+            self.set_backup_directory()
+        
+        # 检查是否需要设置MOD文件夹
+        if not self.config.get_mods_path():
+            self.set_mods_directory()
+            
+        # 自动扫描并加载MOD
+        self.auto_scan_mods()
+        
+        # 初始化UI
+        self.init_ui()
+        
+        # 更新启动游戏按钮状态
+        self.update_launch_button()
+            
+        # 检查是否需要设置游戏路径
+        if not self.config.get_game_path():
+            reply = self.msgbox_question_zh('设置游戏路径', '是否设置游戏路径以便直接启动游戏？\n游戏可执行文件名为SB-Win64-Shipping.exe')
+            if reply == QMessageBox.StandardButton.Yes:
+                self.set_game_path()
+        
+    def load_style(self):
+        """加载样式表"""
+        style_file = os.path.join(os.path.dirname(__file__), 'style.qss')
+        try:
+            with open(style_file, 'r', encoding='utf-8') as f:
+                self.setStyleSheet(f.read())
+        except Exception as e:
+            print(f"[警告] 样式表加载失败: {e}")
+            
+    def init_ui(self):
+        """初始化用户界面"""
+        self.setWindowTitle('爱酱剑星MOD管理器')
+        self.setMinimumSize(1200, 800)
+        
+        # 设置应用图标
+        app_icon = QIcon(resource_path('icons/your_icon.svg'))
+        self.setWindowIcon(app_icon)
+        
+        # 创建中央部件
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # 创建主布局
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # 加载样式表
+        self.load_style()
+
+        # ... 中间省略部分代码 ...
+        # 添加其他UI初始化代码
+        
+    def add_category(self):
+        """添加新分类"""
+        name, ok = self.input_dialog('添加分类', '请输入分类名称：')
+        if ok and name:
+            try:
+                self.config.add_category(name)
+                self.load_categories() # 重新加载以反映变化
+                self.select_category_by_name(name)
+                print(f"[调试] add_category: 添加分类 {name} 成功")
+            except ValueError as e:
+                self.show_message('提示', str(e))
+    
+    def rename_category(self, item):
+        """重命名分类"""
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        old_name = data.get('name')
+        
+        if not old_name:
+            return
+        
+        new_name, ok = self.input_dialog('重命名分类', '请输入新的分类名称：', old_name)
+        
+        if ok and new_name and new_name != old_name:
+            try:
+                self.config.rename_category(old_name, new_name)
+                self.load_categories()
+                self.select_category_by_name(new_name)
+                self.refresh_mod_list()
+                print(f"[调试] rename_category: 完成分类重命名 {old_name} -> {new_name}")
+            except ValueError as e:
+                self.show_message('错误', str(e))
+
+    def get_selected_mod_items(self):
+        """获取选中的MOD项目（优先使用复选框选中的项目）
+        
+        Returns:
+            list: 选中的MOD项目列表
+        """
+        # 优先获取所有复选框选中的项目
+        checked_items = []
+        for i in range(self.mod_list.count()):
+            item = self.mod_list.item(i)
+            if item and item.checkState() == Qt.Checked:
+                checked_items.append(item)
+        
+        # 如果有复选框选中的项目，就返回它们
+        if checked_items:
+            return checked_items
+        
+        # 否则，返回当前高亮选中的项目
+        return self.mod_list.selectedItems()
+
+    def on_mod_list_clicked(self, item):
+        if not item:
+            self.clear_info_panel()
+            return
+        mod_id = item.data(Qt.UserRole)
+        print(f"[调试] on_mod_list_clicked: 显示MOD信息: {mod_id}")
+        self.show_mod_info(mod_id)
+
+    def show_mod_info(self, mod_id):
+        """显示MOD详细信息"""
+        # 获取MOD信息
+        mods = self.config.get_mods()
+        mod_info = mods.get(mod_id)
+        if not mod_info:
+            print(f"[错误] show_mod_info: 无法获取MOD信息: {mod_id}")
+            return
+            
+        # 清除现有信息
+        self.clear_info_panel()
+        
+        # 显示预览图
+        preview_path = mod_info.get('preview_image', '')
+        print(f"[调试] show_mod_info: 预览图路径: {preview_path}")
+        if preview_path and Path(preview_path).exists():
+            pixmap = QPixmap(preview_path)
+            if not pixmap.isNull():
+                self.preview_label.setPixmap(pixmap.scaled(
+                    self.preview_label.width(), 
+                    self.preview_label.height(), 
+                    Qt.KeepAspectRatio, 
+                    Qt.SmoothTransformation
+                ))
+            else:
+                self.preview_label.setText(self.tr("无法加载预览图"))
+        else:
+            print(f"[调试] show_mod_info: 没有设置预览图路径")
+            self.preview_label.clear()
+            self.preview_label.setText(self.tr("无预览图"))
+    
+    def select_default_category(self):
+        """选中默认分类"""
+        print("[调试] select_default_category: 开始选择默认分类")
+        
+        # 如果树中没有项，无法选择分类
+        if self.tree.topLevelItemCount() == 0:
+            print("[调试] select_default_category: 树中没有项，无法选择分类")
+            return False
+            
+        # 获取默认分类名称
+        default_category_name = self.config.default_category_name
+        
+        # 查找默认分类
+        default_item = None
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if data['type'] == 'category' and data['name'] == default_category_name:
+                default_item = item
+                break
+        
+        # 如果找不到默认分类，则使用第一个分类
+        if not default_item and self.tree.topLevelItemCount() > 0:
+            default_item = self.tree.topLevelItem(0)
+            print(f"[调试] select_default_category: 未找到默认分类，使用第一个分类: {default_item.text(0)}")
+        
+        # 选中分类并刷新MOD列表
+        if default_item:
+            self.tree.setCurrentItem(default_item)
+            print(f"[调试] select_default_category: 已选中分类: {default_item.text(0)}")
+            self.refresh_mod_list()
+            
+            # 选中第一个MOD（如果有的话）
+            if self.mod_list.count() > 0:
+                self.mod_list.setCurrentRow(0)
+                self.on_mod_list_clicked(self.mod_list.item(0))
+                print("[调试] select_default_category: 已选中第一个MOD")
+            
+            return True
+        
+        print("[调试] select_default_category: 无法选择分类")
+        return False
+
+    # ... 其他方法 ... 

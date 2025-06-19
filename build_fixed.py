@@ -112,19 +112,19 @@ def build_exe():
     release_dir = os.path.join(os.getcwd(), "release")
     if not os.path.exists(release_dir):
         os.makedirs(release_dir)
-    
+
     exe_path = os.path.join(os.getcwd(), "dist", "剑星MOD管理器_v1.6.3.exe")
     release_exe_path = os.path.join(release_dir, "剑星MOD管理器_v1.6.3.exe")
-    
+
     if os.path.exists(exe_path):
         shutil.copy2(exe_path, release_exe_path)
         print(f"可执行文件已复制到: {release_exe_path}")
     else:
         print(f"可执行文件未找到: {exe_path}")
         return False
-    
+
     print("保留build和dist文件夹，以便调试")
-    
+
     return True
 
 def create_source_package():
@@ -133,7 +133,7 @@ def create_source_package():
     release_dir = os.path.join(os.getcwd(), "release")
     if not os.path.exists(release_dir):
         os.makedirs(release_dir)
-    
+
     zip_path = os.path.join(release_dir, f"剑星MOD管理器_{version}_修复版_源码.zip")
     
     print("开始创建发布包...")
@@ -153,7 +153,7 @@ def create_source_package():
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
-    
+
     # 复制源代码文件
     files_to_copy = [
         "main.py",
@@ -168,7 +168,7 @@ def create_source_package():
         if os.path.exists(file):
             shutil.copy2(file, os.path.join(temp_dir, file))
             print(f"已复制: {file}")
-    
+
     # 复制目录
     dirs_to_copy = [
         "utils",
@@ -185,7 +185,7 @@ def create_source_package():
                 dirs_exist_ok=True
             )
             print(f"已复制目录: {dir_name}")
-    
+
     # 创建ZIP文件
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(temp_dir):
@@ -193,11 +193,11 @@ def create_source_package():
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, temp_dir)
                 zipf.write(file_path, arcname)
-    
+
     # 清理临时目录
     shutil.rmtree(temp_dir)
     print("临时目录已清理")
-    
+
     print(f"发布包创建完成: {zip_path}")
     return True
 
