@@ -15,6 +15,7 @@ namespace UEModManager.Views
         private string _gamePath = "";
         private string _modPath = "";
         private string _backupPath = "";
+        private string _executableName = "";
         private bool _isPathsValid;
 
         public string GameName
@@ -57,6 +58,19 @@ namespace UEModManager.Views
                 _backupPath = value;
                 OnPropertyChanged(nameof(BackupPath));
                 ValidatePaths();
+            }
+        }
+
+        /// <summary>
+        /// 游戏执行程序名称
+        /// </summary>
+        public string ExecutableName
+        {
+            get => _executableName;
+            set
+            {
+                _executableName = value;
+                OnPropertyChanged(nameof(ExecutableName));
             }
         }
 
@@ -117,6 +131,9 @@ namespace UEModManager.Views
                     {
                         GamePath = foundGamePath;
                         GamePathTextBox.Text = foundGamePath;
+                        
+                        // 设置执行程序名称
+                        ExecutableName = Path.GetFileName(foundExePath);
                         
                         // 从exe路径智能推导MOD路径
                         var deducedModPath = DeduceModPathFromExe(foundExePath, GameName);
@@ -209,8 +226,11 @@ namespace UEModManager.Views
             if (validExes.Length == 0) return "";
             if (validExes.Length == 1) return validExes[0];
             
+            // 提取游戏名称的核心部分（去掉括号内容）
+            var coreGameName = gameName.Split('(')[0].Trim();
+            
             // 根据游戏名称查找最匹配的exe
-            var gameSpecificExe = gameName switch
+            var gameSpecificExe = coreGameName switch
             {
                 "剑星" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("sb-win64-shipping")) ??
                          validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("stellarblade")) ??
@@ -223,7 +243,7 @@ namespace UEModManager.Views
                 _ => validExes.FirstOrDefault(exe => 
                      {
                          var fileName = Path.GetFileNameWithoutExtension(exe).ToLower();
-                         var gameNameLower = gameName.ToLower();
+                         var gameNameLower = coreGameName.ToLower();
                          return fileName.Contains(gameNameLower) || gameNameLower.Contains(fileName);
                      })
             };
@@ -240,67 +260,208 @@ namespace UEModManager.Views
         /// </summary>
         private string DeduceModPathFromExe(string exePath, string gameName)
         {
-            var exeDir = Path.GetDirectoryName(exePath);
-            if (string.IsNullOrEmpty(exeDir)) return "";
-            
-            // 从exe目录向上查找游戏根目录
-            var gameRoot = FindGameRootFromExe(exeDir);
-            
-            // 虚幻引擎MOD路径模式
-            var modPathPatterns = new[]
+            try
             {
-                Path.Combine(gameRoot, "Game", "Content", "Paks", "~mods"),
-                Path.Combine(gameRoot, "Game", "Content", "Paks", "Mods"),
-                Path.Combine(gameRoot, "Content", "Paks", "~mods"),
-                Path.Combine(gameRoot, "Content", "Paks", "Mods"),
-                Path.Combine(gameRoot, "Mods"),
-                Path.Combine(gameRoot, "Game", "Content", "Paks"),
-                gameRoot
-            };
-            
-            // 返回第一个可以创建的路径
-            foreach (var pattern in modPathPatterns)
-            {
-                var parentDir = Directory.GetParent(pattern)?.FullName;
-                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+                    return "";
+
+                var exeDir = Path.GetDirectoryName(exePath);
+                var exeFileName = Path.GetFileName(exePath);
+                
+                Console.WriteLine($"[DEBUG] 推导MOD路径 - exe: {exeFileName}, 目录: {exeDir}");
+
+                // 定义虚幻引擎游戏的MOD路径模式
+                var modPathPatterns = new List<string>();
+
+                // 检测exe是否在 Binaries\Win64 目录中
+                if (exeDir.EndsWith("Binaries\\Win64", StringComparison.OrdinalIgnoreCase))
                 {
-                    return pattern;
+                    // 获取游戏根目录（往上两级：Binaries\Win64 -> 项目根目录）
+                    var gameProjectDir = Directory.GetParent(exeDir)?.Parent?.FullName;
+                    
+                    if (!string.IsNullOrEmpty(gameProjectDir))
+                    {
+                        // 标准UE MOD路径模式
+                        modPathPatterns.AddRange(new[]
+                        {
+                            Path.Combine(gameProjectDir, "Content", "Paks", "~mods"),      // 标准MOD路径
+                            Path.Combine(gameProjectDir, "Content", "Paks", "Mods"),       // 变体1
+                            Path.Combine(gameProjectDir, "Content", "Paks", "mods"),       // 变体2
+                            Path.Combine(gameProjectDir, "Content", "Paks"),               // 基础Paks目录
+                        });
+                        
+                        Console.WriteLine($"[DEBUG] UE结构检测到游戏项目目录: {gameProjectDir}");
+                    }
+                    
+                    // 检查是否是子目录结构（如：StellarBlade\SB\Binaries\Win64）
+                    var parentDir = Directory.GetParent(gameProjectDir)?.FullName;
+                    if (!string.IsNullOrEmpty(parentDir))
+                    {
+                        // 查找兄弟目录或其他子目录的Content\Paks
+                        try
+                        {
+                            var siblingDirs = Directory.GetDirectories(parentDir);
+                            foreach (var siblingDir in siblingDirs)
+                            {
+                                var contentPaks = Path.Combine(siblingDir, "Content", "Paks");
+                                if (Directory.Exists(contentPaks))
+                                {
+                                    modPathPatterns.AddRange(new[]
+                                    {
+                                        Path.Combine(contentPaks, "~mods"),
+                                        Path.Combine(contentPaks, "Mods"),
+                                        Path.Combine(contentPaks, "mods"),
+                                        contentPaks
+                                    });
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[DEBUG] 搜索兄弟目录时出错: {ex.Message}");
+                        }
+                    }
                 }
+
+                // 特定游戏的MOD路径规则
+                var gameSpecificModPaths = new Dictionary<string, List<string>>
+                {
+                    ["剑星"] = new List<string>
+                    {
+                        "SB\\Content\\Paks\\~mods",
+                        "StellarBlade\\SB\\Content\\Paks\\~mods",
+                        "SB\\Content\\Paks\\Mods",
+                        "SB\\Content\\Paks"
+                    },
+                    ["Stellar Blade"] = new List<string>
+                    {
+                        "SB\\Content\\Paks\\~mods",
+                        "StellarBlade\\SB\\Content\\Paks\\~mods",
+                        "SB\\Content\\Paks\\Mods",
+                        "SB\\Content\\Paks"
+                    },
+                    ["黑神话悟空"] = new List<string>
+                    {
+                        "b1\\Content\\Paks\\~mods",
+                        "BlackMythWukong\\b1\\Content\\Paks\\~mods",
+                        "b1\\Content\\Paks\\Mods",
+                        "b1\\Content\\Paks"
+                    },
+                    ["黑神话·悟空"] = new List<string>
+                    {
+                        "b1\\Content\\Paks\\~mods",
+                        "BlackMythWukong\\b1\\Content\\Paks\\~mods",
+                        "b1\\Content\\Paks\\Mods",
+                        "b1\\Content\\Paks"
+                    },
+                    ["Black Myth Wukong"] = new List<string>
+                    {
+                        "b1\\Content\\Paks\\~mods",
+                        "BlackMythWukong\\b1\\Content\\Paks\\~mods",
+                        "b1\\Content\\Paks\\Mods",
+                        "b1\\Content\\Paks"
+                    }
+                };
+
+                // 提取游戏名称的核心部分（去掉括号内容）
+                var coreGameName = gameName.Split('(')[0].Trim();
+                
+                // 添加特定游戏的路径模式
+                if (gameSpecificModPaths.ContainsKey(coreGameName) || gameSpecificModPaths.ContainsKey(gameName))
+                {
+                    var gameRootDir = FindGameRootDirectory(exePath);
+                    if (!string.IsNullOrEmpty(gameRootDir))
+                    {
+                        foreach (var relativePath in gameSpecificModPaths[coreGameName] ?? gameSpecificModPaths[gameName])
+                        {
+                            var fullPath = Path.Combine(gameRootDir, relativePath);
+                            modPathPatterns.Add(fullPath);
+                        }
+                    }
+                }
+
+                // 测试所有可能的MOD路径
+                foreach (var modPath in modPathPatterns)
+                {
+                    try
+                    {
+                        var normalizedPath = Path.GetFullPath(modPath);
+                        Console.WriteLine($"[DEBUG] 测试MOD路径: {normalizedPath}");
+                        
+                        // 如果目录存在，直接返回
+                        if (Directory.Exists(normalizedPath))
+                        {
+                            Console.WriteLine($"[SUCCESS] 找到现有MOD目录: {normalizedPath}");
+                            return normalizedPath;
+                        }
+                        
+                        // 如果父目录存在且是Content/Paks，这个路径很可能是正确的
+                        var parentDir = Path.GetDirectoryName(normalizedPath);
+                        if (Directory.Exists(parentDir) && 
+                            (parentDir.EndsWith("Paks", StringComparison.OrdinalIgnoreCase) ||
+                             parentDir.EndsWith("Content", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            Console.WriteLine($"[SUCCESS] 推导出可能的MOD路径: {normalizedPath}");
+                            return normalizedPath;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[DEBUG] 测试路径 {modPath} 时出错: {ex.Message}");
+                    }
+                }
+
+                Console.WriteLine($"[WARNING] 未能推导出MOD路径");
+                return "";
             }
-            
-            // 默认返回游戏根目录下的~mods文件夹
-            return Path.Combine(gameRoot, "Game", "Content", "Paks", "~mods");
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 推导MOD路径失败: {ex.Message}");
+                return "";
+            }
         }
 
-        /// <summary>
-        /// 从exe目录向上查找游戏根目录
-        /// </summary>
-        private string FindGameRootFromExe(string exeDir)
+        // 查找游戏根目录
+        private string FindGameRootDirectory(string exePath)
         {
-            var currentDir = new DirectoryInfo(exeDir);
-            
-            // 向上查找，直到找到包含Content或Game文件夹的目录，或者到达steamapps/common的直接子目录
-            while (currentDir != null && currentDir.Parent != null)
+            try
             {
-                // 如果当前目录包含Game或Content文件夹，可能是游戏根目录
-                if (Directory.Exists(Path.Combine(currentDir.FullName, "Game")) ||
-                    Directory.Exists(Path.Combine(currentDir.FullName, "Content")))
+                var currentDir = Path.GetDirectoryName(exePath);
+                
+                // 向上查找，直到找到看起来像游戏根目录的地方
+                while (!string.IsNullOrEmpty(currentDir))
                 {
-                    return currentDir.FullName;
+                    var dirName = Path.GetFileName(currentDir);
+                    
+                    // 如果是Steam游戏目录或其他游戏分发平台的特征
+                    var parentDirName = Path.GetFileName(Path.GetDirectoryName(currentDir)) ?? "";
+                    
+                    if (parentDirName.Equals("steamapps", StringComparison.OrdinalIgnoreCase) ||
+                        parentDirName.Equals("common", StringComparison.OrdinalIgnoreCase) ||
+                        dirName.Contains("StellarBlade") ||
+                        dirName.Contains("BlackMythWukong") ||
+                        dirName.Contains("Wukong"))
+                    {
+                        return currentDir;
+                    }
+
+                    currentDir = Path.GetDirectoryName(currentDir);
                 }
                 
-                // 如果父目录是steamapps/common，那么当前目录就是游戏根目录
-                if (currentDir.Parent.Name.ToLower() == "common" && 
-                    currentDir.Parent.Parent?.Name.ToLower() == "steamapps")
+                // 如果没找到特殊标记，返回exe文件往上3级的目录 (Win64/Binaries/ProjectDir)
+                var fallbackDir = Path.GetDirectoryName(exePath);
+                for (int i = 0; i < 3 && !string.IsNullOrEmpty(fallbackDir); i++)
                 {
-                    return currentDir.FullName;
+                    fallbackDir = Path.GetDirectoryName(fallbackDir);
                 }
                 
-                currentDir = currentDir.Parent;
+                return fallbackDir ?? "";
             }
-            
-            // 如果没找到，返回exe所在目录的最上层
-            return exeDir;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 查找游戏根目录失败: {ex.Message}");
+                return "";
+            }
         }
 
         private string[] GetGameSearchPaths(string gameName)
@@ -481,7 +642,10 @@ namespace UEModManager.Views
 
         private string[] GetGameKeywords(string gameName)
         {
-            return gameName switch
+            // 提取游戏名称的核心部分（去掉括号内容）
+            var coreGameName = gameName.Split('(')[0].Trim();
+            
+            return coreGameName switch
             {
                 "剑星" => new[] { "Stellar Blade", "StellarBlade", "Stellarblade" },
                 "黑神话·悟空" => new[] { "Black Myth Wukong", "BlackMythWukong", "Black Myth- Wukong", "b1-win64-shipping" },
@@ -489,7 +653,7 @@ namespace UEModManager.Views
                 "艾尔登法环" => new[] { "Elden Ring", "EldenRing" },
                 "赛博朋克2077" => new[] { "Cyberpunk 2077", "Cyberpunk2077" },
                 "巫师3" => new[] { "The Witcher 3 Wild Hunt", "Witcher3" },
-                _ => new[] { gameName, gameName.Replace(" ", ""), gameName.Replace(" ", "_"), gameName.Replace("·", " ") }
+                _ => new[] { coreGameName, coreGameName.Replace(" ", ""), coreGameName.Replace(" ", "_"), coreGameName.Replace("·", " "), gameName }
             };
         }
 

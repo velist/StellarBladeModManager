@@ -142,11 +142,60 @@
         <!-- 按钮 -->
         <StackPanel Grid.Row="10" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <Button Content="确定并扫描MOD" Width="120" Height="35" Margin="0,0,10,0"
-                    Background="#00D4AA" Foreground="White" BorderThickness="0"
-                    Click="Confirm_Click" IsEnabled="{Binding IsPathsValid}"/>
+                    Background="#10B981" Foreground="White" FontWeight="Bold" BorderThickness="0"
+                    Click="Confirm_Click" IsEnabled="{Binding IsPathsValid}">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="border" CornerRadius="6" Background="{TemplateBinding Background}" Padding="12,8">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#059669"/>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#047857"/>
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter TargetName="border" Property="Background" Value="#6B7280"/>
+                                            <Setter Property="Foreground" Value="#9CA3AF"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Button.Style>
+            </Button>
             <Button Content="取消" Width="80" Height="35"
-                    Background="#4A5568" Foreground="White" BorderThickness="0"
-                    Click="Cancel_Click"/>
+                    Background="#374151" Foreground="White" BorderThickness="1" BorderBrush="#6B7280"
+                    Click="Cancel_Click">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="border" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="12,8">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#4B5563"/>
+                                            <Setter TargetName="border" Property="BorderBrush" Value="#9CA3AF"/>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#1F2937"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Button.Style>
+            </Button>
         </StackPanel>
     </Grid>
 </Window> 

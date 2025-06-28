@@ -17,6 +17,9 @@ using System.Text.Json;
 using System.Diagnostics;
 using UEModManager.ViewModels;
 using System.Collections;
+using System.Threading;
+using System.Globalization;
+using System.Threading.Tasks;
 
 // 解决Path命名冲突
 using IOPath = System.IO.Path;
@@ -36,6 +39,7 @@ namespace UEModManager
         private string currentModPath = "";
         private string currentBackupPath = "";
         private string currentGameName = "";
+        private string currentExecutableName = "";  // 添加执行程序名称字段
         private string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
         private readonly List<string> modTags = new List<string> { "面部", "人物", "武器", "修改", "其他" };
         // 主构造函数
@@ -43,6 +47,13 @@ namespace UEModManager
         {
             try
             {
+                // 分配控制台窗口以便调试（仅在Debug模式下）
+                #if DEBUG
+                AllocConsole();
+                Console.WriteLine("=== UEModManager Debug Console ===");
+                Console.WriteLine($"程序启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                #endif
+
                 InitializeComponent();
                 
                 // 启用拖拽功能
@@ -62,13 +73,20 @@ namespace UEModManager
                 };
                 
                 StartStatsTimer();
+                
+                Console.WriteLine("MainWindow 初始化完成");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"主窗口初始化失败: {ex.Message}");
                 MessageBox.Show($"主窗口初始化失败: {ex.Message}", "初始化错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
         }
+
+        // Win32 API 用于分配控制台窗口
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern bool AllocConsole();
 
         // === 配置管理 ===
         private void LoadConfiguration()
@@ -85,6 +103,7 @@ namespace UEModManager
                         currentGamePath = config.GamePath ?? "";
                         currentModPath = config.ModPath ?? "";
                         currentBackupPath = config.BackupPath ?? "";
+                        currentExecutableName = config.ExecutableName ?? "";  // 加载执行程序名称
                         
                         // 修复备份路径：如果指向错误的.NET版本目录，自动修正
                         if (!string.IsNullOrEmpty(currentBackupPath) && currentBackupPath.Contains("net6.0-windows"))
@@ -99,7 +118,8 @@ namespace UEModManager
                                 GameName = currentGameName,
                                 GamePath = currentGamePath,
                                 ModPath = currentModPath,
-                                BackupPath = currentBackupPath
+                                BackupPath = currentBackupPath,
+                                ExecutableName = currentExecutableName
                             };
                             var updatedJson = JsonSerializer.Serialize(updatedConfig, new JsonSerializerOptions { WriteIndented = true });
                             File.WriteAllText(configFilePath, updatedJson);
@@ -108,6 +128,7 @@ namespace UEModManager
                         
                         Console.WriteLine($"配置加载成功: 游戏={currentGameName}, 路径={currentGamePath}");
                         Console.WriteLine($"MOD路径={currentModPath}, 备份路径={currentBackupPath}");
+                        Console.WriteLine($"执行程序={currentExecutableName}");
                     }
                 }
                 else
@@ -156,7 +177,7 @@ namespace UEModManager
             }
         }
 
-        private void SaveConfiguration()
+        private void SaveConfiguration(string executableName)
         {
             try
             {
@@ -165,10 +186,13 @@ namespace UEModManager
                     GameName = currentGameName,
                     GamePath = currentGamePath,
                     ModPath = currentModPath,
-                    BackupPath = currentBackupPath
+                    BackupPath = currentBackupPath,
+                    ExecutableName = executableName
                 };
                 var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(configFilePath, json);
+                
+                Console.WriteLine($"[DEBUG] 配置已保存 - 游戏: {currentGameName}, 执行程序: {executableName}");
             }
             catch (Exception ex)
             {
@@ -285,14 +309,25 @@ namespace UEModManager
         {
             try
             {
+                Console.WriteLine($"[DEBUG] GameList_SelectionChanged 事件触发");
+                Console.WriteLine($"[DEBUG] Sender: {sender?.GetType().Name}");
+                Console.WriteLine($"[DEBUG] GameList.SelectedIndex: {GameList?.SelectedIndex}");
+                Console.WriteLine($"[DEBUG] GameList.SelectedItem: {GameList?.SelectedItem}");
+                
                 if (GameList.SelectedItem is ComboBoxItem selectedItem)
                 {
                     var gameName = selectedItem.Content.ToString();
+                    Console.WriteLine($"[DEBUG] 选中的游戏名称: {gameName}");
+                    Console.WriteLine($"[DEBUG] 当前游戏名称: {currentGameName}");
+                    
                     if (gameName != "请选择游戏" && gameName != currentGameName)
                     {
+                        Console.WriteLine($"[DEBUG] 准备切换游戏从 '{currentGameName}' 到 '{gameName}'");
+                        
                         // 如果已经有游戏配置，显示切换确认
                         if (!string.IsNullOrEmpty(currentGameName))
                         {
+                            Console.WriteLine($"[DEBUG] 显示切换确认对话框");
                             var result = MessageBox.Show(
                                 $"您即将从 '{currentGameName}' 切换到 '{gameName}'。\n\n" +
                                 "这将重新配置游戏路径并重新扫描MOD文件。\n" +
@@ -305,6 +340,7 @@ namespace UEModManager
                             
                             if (result == MessageBoxResult.No)
                             {
+                                Console.WriteLine($"[DEBUG] 用户取消切换，恢复原选择");
                                 // 恢复到原来的选择
                                 GameList.SelectionChanged -= GameList_SelectionChanged;
                                 GameList.SelectedItem = GameList.Items.Cast<ComboBoxItem>()
@@ -312,15 +348,26 @@ namespace UEModManager
                                 GameList.SelectionChanged += GameList_SelectionChanged;
                                 return;
                             }
+                            Console.WriteLine($"[DEBUG] 用户确认切换");
                         }
                         
+                        Console.WriteLine($"[DEBUG] 调用ShowGamePathDialog");
                         ShowGamePathDialog(gameName);
                     }
+                    else
+                    {
+                        Console.WriteLine($"[DEBUG] 游戏选择未变化或选择了默认项，不执行切换操作");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[DEBUG] SelectedItem 不是 ComboBoxItem 类型: {GameList?.SelectedItem?.GetType().Name}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"游戏选择失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 游戏选择失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
             }
         }
 
@@ -335,7 +382,15 @@ namespace UEModManager
                 currentModPath = dialog.ModPath;
                 currentBackupPath = dialog.BackupPath;
                 
-                SaveConfiguration();
+                // 获取对话框找到的执行程序名称，如果没有则自动查找
+                var executableName = !string.IsNullOrEmpty(dialog.ExecutableName) 
+                    ? dialog.ExecutableName 
+                    : AutoDetectGameExecutable(currentGamePath, gameName);
+                
+                // 更新当前执行程序名称
+                currentExecutableName = executableName;
+                
+                SaveConfiguration(executableName);
                 UpdateGamePathDisplay();
                 
                 // 显示扫描进度
@@ -346,9 +401,13 @@ namespace UEModManager
                 {
                     InitializeModsForGame();
                     
+                    var executableInfo = !string.IsNullOrEmpty(executableName) 
+                        ? $"\n游戏程序: {executableName}" 
+                        : "\n游戏程序: 未找到可执行文件";
+                    
                     MessageBox.Show(
                         $"游戏 '{gameName}' 配置完成！\n\n" +
-                        $"游戏路径: {currentGamePath}\n" +
+                        $"游戏路径: {currentGamePath}{executableInfo}\n" +
                         $"MOD路径: {currentModPath}\n" +
                         $"备份路径: {currentBackupPath}\n\n" +
                         $"已扫描到 {allMods.Count} 个MOD",
@@ -377,6 +436,111 @@ namespace UEModManager
                     GameList.SelectedIndex = 0;
                 }
                 GameList.SelectionChanged += GameList_SelectionChanged;
+            }
+        }
+
+        /// <summary>
+        /// 自动检测游戏执行程序
+        /// </summary>
+        private string AutoDetectGameExecutable(string gamePath, string gameName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
+                {
+                    Console.WriteLine($"[DEBUG] 游戏路径无效: {gamePath}");
+                    return "";
+                }
+
+                Console.WriteLine($"[DEBUG] 开始查找游戏执行程序，游戏路径: {gamePath}, 游戏名称: {gameName}");
+
+                // 查找所有exe文件
+                var exeFiles = Directory.GetFiles(gamePath, "*.exe", SearchOption.AllDirectories);
+                Console.WriteLine($"[DEBUG] 找到 {exeFiles.Length} 个可执行文件");
+
+                if (exeFiles.Length == 0)
+                {
+                    Console.WriteLine($"[DEBUG] 未找到任何可执行文件");
+                    return "";
+                }
+
+                // 排除常见的辅助工具和安装程序
+                var excludeKeywords = new[] { "unins", "setup", "launcher", "updater", "installer", "redist", "vcredist", "directx", "crashreporter" };
+                
+                var validExes = exeFiles.Where(exe =>
+                {
+                    var fileName = Path.GetFileName(exe).ToLower();
+                    return !excludeKeywords.Any(keyword => fileName.Contains(keyword));
+                }).ToArray();
+
+                Console.WriteLine($"[DEBUG] 排除辅助工具后剩余 {validExes.Length} 个有效可执行文件");
+                foreach (var exe in validExes)
+                {
+                    Console.WriteLine($"[DEBUG] 有效exe: {Path.GetFileName(exe)}");
+                }
+
+                if (validExes.Length == 0) return "";
+                if (validExes.Length == 1) 
+                {
+                    var singleExe = Path.GetFileName(validExes[0]);
+                    Console.WriteLine($"[DEBUG] 只有一个有效exe，选择: {singleExe}");
+                    return singleExe;
+                }
+
+                // 根据游戏名称查找最匹配的exe
+                var gameSpecificExe = gameName switch
+                {
+                    "剑星" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("sb-win64-shipping")) ??
+                             validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("stellarblade")) ??
+                             validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("stellar")),
+                     
+                    var name when name.StartsWith("剑星") => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("sb-win64-shipping")) ??
+                             validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("stellarblade")) ??
+                             validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("stellar")),
+                     
+                    "黑神话·悟空" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("b1-win64-shipping")) ??
+                                   validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("wukong")) ??
+                                   validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("blackmyth")),
+
+                    var name when name.StartsWith("黑神话") => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("b1-win64-shipping")) ??
+                                   validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("wukong")) ??
+                                   validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("blackmyth")),
+
+                    "光与影：33号远征队" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("enshrouded")),
+
+                    "艾尔登法环" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("eldenring")),
+
+                    "赛博朋克2077" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("cyberpunk2077")),
+
+                    "巫师3" => validExes.FirstOrDefault(exe => Path.GetFileName(exe).ToLower().Contains("witcher3")),
+                    
+                    _ => validExes.FirstOrDefault(exe => 
+                         {
+                             var fileName = Path.GetFileNameWithoutExtension(exe).ToLower();
+                             var coreGameName = gameName.Split('(')[0].Trim();
+                             var gameNameLower = coreGameName.ToLower().Replace("：", "").Replace("·", "").Replace(" ", "");
+                             return fileName.Contains(gameNameLower) || gameNameLower.Contains(fileName);
+                         })
+                };
+
+                if (!string.IsNullOrEmpty(gameSpecificExe))
+                {
+                    var specificExeName = Path.GetFileName(gameSpecificExe);
+                    Console.WriteLine($"[DEBUG] 通过游戏名称匹配找到exe: {specificExeName}");
+                    return specificExeName;
+                }
+
+                // 选择最大的exe文件（通常是主程序）
+                var largestExe = validExes.OrderByDescending(exe => new FileInfo(exe).Length).First();
+                var largestExeName = Path.GetFileName(largestExe);
+                Console.WriteLine($"[DEBUG] 选择最大的exe文件: {largestExeName} ({FormatFileSize(new FileInfo(largestExe).Length)})");
+                
+                return largestExeName;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 自动检测游戏执行程序失败: {ex.Message}");
+                return "";
             }
         }
 
@@ -419,54 +583,129 @@ namespace UEModManager
 
         private void ScanModsInDirectory(string directory, bool isEnabled)
         {
-            var modFiles = Directory.GetFiles(directory, "*.pak", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(directory, "*.ucas", SearchOption.AllDirectories))
-                .Concat(Directory.GetFiles(directory, "*.utoc", SearchOption.AllDirectories))
-                .ToList();
-
-            var groupedFiles = modFiles.GroupBy(f =>
+            Console.WriteLine($"[DEBUG] 扫描目录: {directory}, 启用状态: {isEnabled}");
+            
+            if (isEnabled)
             {
-                var fileName = IOPath.GetFileNameWithoutExtension(f);
-                // 移除可能的后缀，如 _P, _1, etc.
-                return System.Text.RegularExpressions.Regex.Replace(fileName, @"(_\d*|_P)$", "");
-            });
-
-            foreach (var group in groupedFiles)
-            {
-                var modName = group.Key;
-                var firstFile = group.First();
-
-                if (!allMods.Any(m => m.Name == modName))
+                // 扫描~mods目录下的子目录（新的组织结构）
+                var modSubDirectories = Directory.GetDirectories(directory);
+                Console.WriteLine($"[DEBUG] 找到 {modSubDirectories.Length} 个MOD子目录");
+                
+                foreach (var modDir in modSubDirectories)
                 {
-                    var mod = new Mod
-                    {
-                        Name = modName,
-                        RealName = modName,
-                        Status = isEnabled ? "已启用" : "已禁用",
-                        Type = DetermineModType(modName, group.ToList()),
-                        Size = FormatFileSize(group.Sum(f => new FileInfo(f).Length)),
-                        ImportDate = File.GetCreationTime(firstFile).ToString("yyyy-MM-dd"),
-                        Icon = GetModIcon(IOPath.GetExtension(firstFile)),
-                    };
+                    var modName = new DirectoryInfo(modDir).Name;
+                    Console.WriteLine($"[DEBUG] 扫描启用的MOD目录: {modDir} (名称: {modName})");
                     
-                    // 在同一目录下查找预览图
-                    var modDirectory = IOPath.GetDirectoryName(firstFile);
-                    if (!string.IsNullOrEmpty(modDirectory))
+                    // 查找目录中的MOD文件
+                    var modFiles = Directory.GetFiles(modDir, "*.pak", SearchOption.AllDirectories)
+                        .Concat(Directory.GetFiles(modDir, "*.ucas", SearchOption.AllDirectories))
+                        .Concat(Directory.GetFiles(modDir, "*.utoc", SearchOption.AllDirectories))
+                        .ToList();
+                    
+                    Console.WriteLine($"[DEBUG] MOD {modName} 找到 {modFiles.Count} 个文件");
+                    
+                    if (modFiles.Count > 0 && !allMods.Any(m => m.RealName == modName))
                     {
-                        var allFilesInDir = Directory.GetFiles(modDirectory);
-                        var previewImage = allFilesInDir.FirstOrDefault(f => 
-                            IOPath.GetFileName(f).ToLower().Contains("preview") ||
-                            IOPath.GetFileName(f).ToLower().StartsWith("preview") ||
-                            (new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower()) &&
-                             IOPath.GetFileNameWithoutExtension(f).ToLower().Contains(modName.ToLower())));
-                        if (previewImage != null)
+                        var firstFile = modFiles.First();
+                        var mod = new Mod
                         {
-                            mod.PreviewImagePath = previewImage;
+                            Name = modName,
+                            RealName = modName,
+                            Status = "已启用",
+                            Type = DetermineModType(modName, modFiles),
+                            Size = FormatFileSize(modFiles.Sum(f => new FileInfo(f).Length)),
+                            ImportDate = Directory.GetCreationTime(modDir).ToString("yyyy-MM-dd"),
+                            Icon = GetModIcon(IOPath.GetExtension(firstFile)),
+                        };
+                        
+                        // 从备份目录查找预览图
+                        var backupDir = IOPath.Combine(currentBackupPath, modName);
+                        Console.WriteLine($"[DEBUG] 查找MOD {modName} 的备份目录: {backupDir}");
+                        if (Directory.Exists(backupDir))
+                        {
+                            var allFiles = Directory.GetFiles(backupDir, "*.*", SearchOption.TopDirectoryOnly);
+                            Console.WriteLine($"[DEBUG] 备份目录中的文件: {string.Join(", ", allFiles.Select(f => IOPath.GetFileName(f)))}");
+                            
+                            var previewImage = allFiles.FirstOrDefault(f => 
+                                IOPath.GetFileName(f).ToLower().StartsWith("preview") ||
+                                new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower()));
+                            
+                            if (previewImage != null)
+                            {
+                                mod.PreviewImagePath = previewImage;
+                                Console.WriteLine($"[DEBUG] 为MOD {modName} 找到预览图: {previewImage}");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[DEBUG] MOD {modName} 的备份目录中未找到预览图");
+                            }
                         }
+                        else
+                        {
+                            Console.WriteLine($"[DEBUG] MOD {modName} 的备份目录不存在");
+                        }
+                        
+                        // 确保此MOD有备份（如果没有，创建备份）
+                        BackupModFilesForScan(modName, firstFile);
+                        
+                        LoadModPreviewImage(mod);
+                        allMods.Add(mod);
+                        Console.WriteLine($"[DEBUG] 添加启用的MOD: {modName}");
                     }
-                    
-                    LoadModPreviewImage(mod);
-                    allMods.Add(mod);
+                }
+            }
+            else
+            {
+                // 对于传统的扫描方式（兼容性保留，但主要依赖备份目录扫描）
+                var modFiles = Directory.GetFiles(directory, "*.pak", SearchOption.AllDirectories)
+                    .Concat(Directory.GetFiles(directory, "*.ucas", SearchOption.AllDirectories))
+                    .Concat(Directory.GetFiles(directory, "*.utoc", SearchOption.AllDirectories))
+                    .ToList();
+
+                var groupedFiles = modFiles.GroupBy(f =>
+                {
+                    var fileName = IOPath.GetFileNameWithoutExtension(f);
+                    // 移除可能的后缀，如 _P, _1, etc.
+                    return System.Text.RegularExpressions.Regex.Replace(fileName, @"(_\d*|_P)$", "");
+                });
+
+                foreach (var group in groupedFiles)
+                {
+                    var modName = group.Key;
+                    var firstFile = group.First();
+
+                    if (!allMods.Any(m => m.Name == modName))
+                    {
+                        var mod = new Mod
+                        {
+                            Name = modName,
+                            RealName = modName,
+                            Status = "已禁用",
+                            Type = DetermineModType(modName, group.ToList()),
+                            Size = FormatFileSize(group.Sum(f => new FileInfo(f).Length)),
+                            ImportDate = File.GetCreationTime(firstFile).ToString("yyyy-MM-dd"),
+                            Icon = GetModIcon(IOPath.GetExtension(firstFile)),
+                        };
+                        
+                        // 在同一目录下查找预览图
+                        var modDirectory = IOPath.GetDirectoryName(firstFile);
+                        if (!string.IsNullOrEmpty(modDirectory))
+                        {
+                            var allFilesInDir = Directory.GetFiles(modDirectory);
+                            var previewImage = allFilesInDir.FirstOrDefault(f => 
+                                IOPath.GetFileName(f).ToLower().Contains("preview") ||
+                                IOPath.GetFileName(f).ToLower().StartsWith("preview") ||
+                                (new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower()) &&
+                                 IOPath.GetFileNameWithoutExtension(f).ToLower().Contains(modName.ToLower())));
+                            if (previewImage != null)
+                            {
+                                mod.PreviewImagePath = previewImage;
+                            }
+                        }
+                        
+                        LoadModPreviewImage(mod);
+                        allMods.Add(mod);
+                    }
                 }
             }
         }
@@ -501,10 +740,13 @@ namespace UEModManager
                     };
                     
                     // 检查是否有预览图并预加载
+                    var imageFiles = files.Where(f => new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower())).ToList();
+                    Console.WriteLine($"[DEBUG] 在目录中找到 {imageFiles.Count} 个图片文件: {string.Join(", ", imageFiles.Select(f => IOPath.GetFileName(f)))}");
+                    
                     var previewImage = files.FirstOrDefault(f => 
                         IOPath.GetFileName(f).ToLower().Contains("preview") ||
-                        IOPath.GetFileName(f).ToLower().StartsWith("preview") ||
-                        new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower()));
+                        IOPath.GetFileName(f).ToLower().StartsWith("preview")) 
+                        ?? imageFiles.FirstOrDefault(); // 如果没找到preview，就用第一个图片文件
                     
                     Console.WriteLine($"[DEBUG] MOD {modName} 预览图查找结果: {previewImage ?? "未找到"}");
                     
@@ -524,10 +766,13 @@ namespace UEModManager
                     var files = Directory.GetFiles(dir);
                     Console.WriteLine($"[DEBUG] 为已存在的MOD {modName} 查找预览图，文件: {string.Join(", ", files.Select(f => IOPath.GetFileName(f)))}");
                     
+                    var imageFiles = files.Where(f => new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower())).ToList();
+                    Console.WriteLine($"[DEBUG] 为已存在MOD {modName} 找到 {imageFiles.Count} 个图片文件: {string.Join(", ", imageFiles.Select(f => IOPath.GetFileName(f)))}");
+                    
                     var previewImage = files.FirstOrDefault(f => 
                         IOPath.GetFileName(f).ToLower().Contains("preview") ||
-                        IOPath.GetFileName(f).ToLower().StartsWith("preview") ||
-                        new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" }.Contains(IOPath.GetExtension(f).ToLower()));
+                        IOPath.GetFileName(f).ToLower().StartsWith("preview")) 
+                        ?? imageFiles.FirstOrDefault(); // 如果没找到preview，就用第一个图片文件
                     
                     Console.WriteLine($"[DEBUG] 已存在MOD {modName} 预览图查找结果: {previewImage ?? "未找到"}");
                     
@@ -542,13 +787,168 @@ namespace UEModManager
         }
 
         /// <summary>
-        /// 备份MOD文件到备份目录的独立文件夹中
+        /// 扫描时备份MOD文件（适配新的子目录组织结构）
+        /// </summary>
+        private bool BackupModFilesForScan(string modName, string sampleModFile)
+        {
+            try
+            {
+                Console.WriteLine($"[BACKUP] 开始备份扫描到的MOD: {modName}");
+                
+                // 在备份目录中为此MOD创建独立文件夹
+                var modBackupDir = IOPath.Combine(currentBackupPath, modName);
+                
+                // 如果备份文件夹已存在且有MOD文件，跳过备份（避免重复备份）
+                if (Directory.Exists(modBackupDir))
+                {
+                    var existingFiles = Directory.GetFiles(modBackupDir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => !IOPath.GetFileName(f).StartsWith("preview"))
+                        .ToList();
+                    
+                    if (existingFiles.Count > 0)
+                    {
+                        Console.WriteLine($"[BACKUP] MOD {modName} 已有备份({existingFiles.Count}个文件)，跳过");
+                        return true;
+                    }
+                }
+                
+                // 创建或确保MOD专属备份目录存在
+                if (!Directory.Exists(modBackupDir))
+                {
+                    Directory.CreateDirectory(modBackupDir);
+                    Console.WriteLine($"[BACKUP] 创建MOD备份目录: {modBackupDir}");
+                }
+                
+                // 确定MOD文件的来源目录（应该是~mods/mod_name/）
+                var modFileDirectory = IOPath.GetDirectoryName(sampleModFile);
+                if (string.IsNullOrEmpty(modFileDirectory))
+                {
+                    Console.WriteLine($"[BACKUP] 无法确定MOD文件目录: {sampleModFile}");
+                    return false;
+                }
+                
+                // 检查是否是新的子目录结构
+                var parentDir = IOPath.GetDirectoryName(modFileDirectory);
+                bool isSubDirectoryStructure = parentDir != null && IOPath.GetFileName(parentDir) == "~mods";
+                
+                List<string> modFiles = new List<string>();
+                
+                if (isSubDirectoryStructure)
+                {
+                    // 新结构：~mods/mod_name/ - 备份整个子目录的内容
+                    Console.WriteLine($"[BACKUP] 检测到新的子目录结构，备份目录: {modFileDirectory}");
+                    modFiles = Directory.GetFiles(modFileDirectory, "*.*", SearchOption.AllDirectories)
+                        .Where(f => IsModRelatedFile(f, modName))
+                        .ToList();
+                }
+                else
+                {
+                    // 传统结构：直接在~mods目录下的文件
+                    Console.WriteLine($"[BACKUP] 检测到传统文件结构，备份目录: {modFileDirectory}");
+                    var allFilesInDir = Directory.GetFiles(modFileDirectory, "*", SearchOption.TopDirectoryOnly);
+                    
+                    foreach (var file in allFilesInDir)
+                    {
+                        if (IsModRelatedFile(file, modName))
+                        {
+                            modFiles.Add(file);
+                        }
+                    }
+                }
+                
+                Console.WriteLine($"[BACKUP] 找到 {modFiles.Count} 个需要备份的文件");
+                
+                // 复制MOD文件到备份目录
+                int successCount = 0;
+                foreach (var modFile in modFiles)
+                {
+                    try
+                    {
+                        string backupPath;
+                        
+                        if (isSubDirectoryStructure)
+                        {
+                            // 保持相对路径结构
+                            var relativePath = IOPath.GetRelativePath(modFileDirectory, modFile);
+                            backupPath = IOPath.Combine(modBackupDir, relativePath);
+                            
+                            // 确保目标目录存在
+                            var backupFileDir = IOPath.GetDirectoryName(backupPath);
+                            if (!Directory.Exists(backupFileDir))
+                            {
+                                Directory.CreateDirectory(backupFileDir);
+                            }
+                        }
+                        else
+                        {
+                            // 传统结构，直接复制到备份根目录
+                            var fileName = IOPath.GetFileName(modFile);
+                            backupPath = IOPath.Combine(modBackupDir, fileName);
+                        }
+                        
+                        File.Copy(modFile, backupPath, true);
+                        successCount++;
+                        Console.WriteLine($"[BACKUP] 备份文件: {IOPath.GetFileName(modFile)} -> {IOPath.GetRelativePath(modBackupDir, backupPath)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[BACKUP] 备份文件失败 {modFile}: {ex.Message}");
+                    }
+                }
+                
+                var success = successCount > 0;
+                if (success)
+                {
+                    Console.WriteLine($"[BACKUP] MOD {modName} 备份成功，共备份 {successCount} 个文件");
+                }
+                else
+                {
+                    Console.WriteLine($"[BACKUP] MOD {modName} 备份失败，没有成功备份任何文件");
+                }
+                
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BACKUP] 备份MOD {modName} 时发生异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 判断文件是否与指定MOD相关
+        /// </summary>
+        private bool IsModRelatedFile(string filePath, string modName)
+        {
+            var fileName = IOPath.GetFileName(filePath);
+            var extension = IOPath.GetExtension(filePath).ToLower();
+            
+            // 常见的MOD相关文件扩展名
+            var modExtensions = new[] { ".pak", ".ucas", ".utoc", ".txt", ".md", ".readme", ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
+            
+            if (!modExtensions.Contains(extension))
+            {
+                return false;
+            }
+            
+            // 检查文件名是否包含MOD名称
+            var fileNameLower = fileName.ToLower();
+            var modNameLower = modName.ToLower();
+            
+            return fileNameLower.Contains(modNameLower) || 
+                   fileNameLower.StartsWith("preview") ||
+                   fileNameLower.Contains("readme") ||
+                   fileNameLower.Contains("description");
+        }
+
+        /// <summary>
+        /// 备份MOD文件到备份目录的独立文件夹中（兼容性方法）
         /// </summary>
         private bool BackupModFiles(string modName, List<string> modFiles)
         {
             try
             {
-                Console.WriteLine($"开始备份MOD: {modName}");
+                Console.WriteLine($"[BACKUP] 开始备份MOD文件列表: {modName}");
                 
                 // 在备份目录中为此MOD创建独立文件夹
                 var modBackupDir = IOPath.Combine(currentBackupPath, modName);
@@ -557,12 +957,12 @@ namespace UEModManager
                 if (Directory.Exists(modBackupDir))
                 {
                     Directory.Delete(modBackupDir, true);
-                    Console.WriteLine($"清空已存在的备份目录: {modBackupDir}");
+                    Console.WriteLine($"[BACKUP] 清空已存在的备份目录: {modBackupDir}");
                 }
                 
                 // 创建MOD专属备份目录
                 Directory.CreateDirectory(modBackupDir);
-                Console.WriteLine($"创建MOD备份目录: {modBackupDir}");
+                Console.WriteLine($"[BACKUP] 创建MOD备份目录: {modBackupDir}");
                 
                 // 复制MOD文件到备份目录
                 int successCount = 0;
@@ -575,22 +975,22 @@ namespace UEModManager
                         
                         File.Copy(modFile, backupPath, true);
                         successCount++;
-                        Console.WriteLine($"备份文件: {modFile} -> {backupPath}");
+                        Console.WriteLine($"[BACKUP] 备份文件: {modFile} -> {backupPath}");
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"备份文件失败 {modFile}: {ex.Message}");
+                        Console.WriteLine($"[BACKUP] 备份文件失败 {modFile}: {ex.Message}");
                     }
                 }
                 
                 var success = successCount > 0;
                 if (success)
                 {
-                    Console.WriteLine($"MOD {modName} 备份成功，共备份 {successCount} 个文件");
+                    Console.WriteLine($"[BACKUP] MOD {modName} 备份成功，共备份 {successCount} 个文件");
                 }
                 else
                 {
-                    Console.WriteLine($"MOD {modName} 备份失败，没有成功备份任何文件");
+                    Console.WriteLine($"[BACKUP] MOD {modName} 备份失败，没有成功备份任何文件");
                     // 如果备份失败，删除空的备份目录
                     if (Directory.Exists(modBackupDir) && !Directory.GetFiles(modBackupDir, "*", SearchOption.AllDirectories).Any())
                     {
@@ -602,7 +1002,7 @@ namespace UEModManager
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"备份MOD失败 {modName}: {ex.Message}");
+                Console.WriteLine($"[BACKUP] 备份MOD失败 {modName}: {ex.Message}");
                 return false;
             }
         }
@@ -633,38 +1033,55 @@ namespace UEModManager
         {
             Console.WriteLine($"[DEBUG] 开始加载预览图: MOD={mod.Name}, Path={mod.PreviewImagePath}");
             
-            if (string.IsNullOrEmpty(mod.PreviewImagePath) || !File.Exists(mod.PreviewImagePath))
+            if (string.IsNullOrEmpty(mod.PreviewImagePath))
             {
-                Console.WriteLine($"[DEBUG] 预览图路径无效或文件不存在: {mod.PreviewImagePath}");
+                Console.WriteLine($"[DEBUG] 预览图路径为空: MOD={mod.Name}");
                 mod.PreviewImageSource = null;
+                mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                return;
+            }
+            
+            if (!File.Exists(mod.PreviewImagePath))
+            {
+                Console.WriteLine($"[DEBUG] 预览图文件不存在: {mod.PreviewImagePath}");
+                mod.PreviewImageSource = null;
+                mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
                 return;
             }
 
             try
             {
                 Console.WriteLine($"[DEBUG] 开始加载图片文件: {mod.PreviewImagePath}");
+                Console.WriteLine($"[DEBUG] 文件大小: {new FileInfo(mod.PreviewImagePath).Length} 字节");
                 
-                // 使用FileStream方式加载，避免缓存和锁定问题
-                using (var fileStream = new FileStream(mod.PreviewImagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                    bitmap.StreamSource = fileStream;
-                    bitmap.EndInit();
-                    bitmap.Freeze(); // 跨线程访问必须冻结
-                    
-                    // 正确设置PreviewImageSource属性，触发UI更新
-                    mod.PreviewImageSource = bitmap;
-                    
-                    Console.WriteLine($"[DEBUG] 成功加载预览图: {mod.Name}, ImageSource已设置");
-                }
+                // 使用Uri方式创建BitmapImage，避免缓存问题和文件锁定
+                var uri = new Uri(mod.PreviewImagePath, UriKind.Absolute);
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = uri;
+                bitmap.CacheOption = BitmapCacheOption.OnLoad; // 将数据加载到内存
+                bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache; // 忽略系统缓存
+                bitmap.EndInit();
+                bitmap.Freeze(); // 冻结以支持跨线程访问
+                
+                Console.WriteLine($"[DEBUG] BitmapImage创建成功: 宽度={bitmap.PixelWidth}, 高度={bitmap.PixelHeight}");
+                
+                // 设置PreviewImageSource属性，触发UI更新
+                mod.PreviewImageSource = bitmap;
+                
+                Console.WriteLine($"[DEBUG] 成功加载预览图: {mod.Name}, ImageSource已设置");
+                
+                // 强制通知属性变更
+                mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                Console.WriteLine($"[DEBUG] 已触发PropertyChanged事件: PreviewImageSource");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DEBUG] 预加载图片失败: {mod.PreviewImagePath}, 错误: {ex.Message}");
+                Console.WriteLine($"[DEBUG] 加载预览图失败: {mod.PreviewImagePath}");
+                Console.WriteLine($"[DEBUG] 错误详情: {ex.Message}");
+                Console.WriteLine($"[DEBUG] 堆栈跟踪: {ex.StackTrace}");
                 mod.PreviewImageSource = null;
+                mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
             }
         }
 
@@ -674,20 +1091,36 @@ namespace UEModManager
             {
                 Console.WriteLine("开始刷新MOD显示...");
                 
-                // 强制垃圾回收，释放图片缓存和文件锁定
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
+                // 强制释放所有图片资源和文件锁定
+                foreach (var mod in allMods)
+                {
+                    if (mod.PreviewImageSource != null)
+                    {
+                        mod.PreviewImageSource = null;
+                        mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                    }
+                }
                 
-                // 强制刷新数据绑定
+                // 清空UI数据源
                 ModsGrid.ItemsSource = null;
+                
+                // 强制多次垃圾回收，确保释放文件锁定
+                for (int i = 0; i < 3; i++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
                 
                 // 强制界面更新
                 ModsGrid.UpdateLayout();
                 
-                // 触发所有MOD的预览图属性更改通知
+                // 重新加载所有MOD的预览图
                 foreach (var mod in allMods)
                 {
-                    mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                    if (!string.IsNullOrEmpty(mod.PreviewImagePath))
+                    {
+                        LoadModPreviewImage(mod);
+                    }
                 }
                 
                 // 重新设置数据源
@@ -986,34 +1419,41 @@ namespace UEModManager
         {
             try
             {
-                if (selectedMod != null)
+                if (selectedMod == null)
                 {
-                    bool isCurrentlyEnabled = selectedMod.Status == "已启用";
-                    
-                    if (isCurrentlyEnabled)
-                    {
-                        DisableMod(selectedMod);
-                    }
-                    else
-                    {
-                        EnableMod(selectedMod);
-                    }
-                    
-                    // 更新滑块状态
-                    UpdateToggleState(!isCurrentlyEnabled);
-                    
-                    // 更新其他UI
-                    UpdateModDetails(selectedMod);
-                    RefreshModDisplay();
-                    UpdateCategoryCount();
-                    
-                    Console.WriteLine($"MOD {selectedMod.Name} 状态已切换为: {selectedMod.Status}");
+                    Console.WriteLine("[DEBUG] 没有选中的MOD，无法切换状态");
+                    return;
                 }
+
+                bool currentlyEnabled = selectedMod.Status == "已启用";
+                Console.WriteLine($"[DEBUG] 滑动开关点击: MOD={selectedMod.Name}, 当前状态={selectedMod.Status}, 将切换为={(!currentlyEnabled ? "启用" : "禁用")}");
+
+                if (currentlyEnabled)
+                {
+                    // 当前已启用，切换为禁用
+                    DisableMod(selectedMod);
+                }
+                else
+                {
+                    // 当前已禁用，切换为启用
+                    EnableMod(selectedMod);
+                }
+
+                // 更新详情面板显示
+                UpdateModDetails(selectedMod);
+                
+                // 刷新MOD列表显示
+                RefreshModDisplay();
+                
+                // 更新分类计数
+                UpdateCategoryCount();
+                
+                Console.WriteLine($"[DEBUG] 滑动开关切换完成: MOD={selectedMod.Name}, 新状态={selectedMod.Status}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"切换MOD状态时发生错误: {ex.Message}");
-                MessageBox.Show($"切换MOD状态时发生错误: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Console.WriteLine($"滑动开关切换失败: {ex.Message}");
+                MessageBox.Show($"切换MOD状态失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1645,47 +2085,124 @@ namespace UEModManager
         }
 
         /// <summary>
-        /// 为MOD设置预览图 - 参考旧版本的成功实现
+        /// 为MOD设置预览图 - 按照老版本成功逻辑重新设计，确保C1和C2都显示
         /// </summary>
         private void SetModPreviewImage(Mod mod, string imagePath)
         {
             try
             {
-                Console.WriteLine($"为MOD {mod.Name} 设置预览图: {imagePath}");
+                Console.WriteLine($"[DEBUG] 为MOD {mod.Name} 设置预览图: {imagePath}");
                 
+                // 确保备份目录存在
+                if (!Directory.Exists(currentBackupPath))
+                {
+                    Directory.CreateDirectory(currentBackupPath);
+                }
+                
+                // 创建MOD专属备份目录（使用RealName作为目录名）
                 var modBackupDir = IOPath.Combine(currentBackupPath, mod.RealName);
                 if (!Directory.Exists(modBackupDir))
                 {
                     Directory.CreateDirectory(modBackupDir);
+                    Console.WriteLine($"[DEBUG] 创建MOD备份目录: {modBackupDir}");
                 }
                 
+                // 获取图片扩展名并生成预览图文件名
                 var imageExtension = IOPath.GetExtension(imagePath);
                 var previewImageName = "preview" + imageExtension;
                 var previewImagePath = IOPath.Combine(modBackupDir, previewImageName);
                 
-                if (File.Exists(previewImagePath))
+                // 强制释放现有图片资源
+                if (mod.PreviewImageSource != null)
                 {
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    File.Delete(previewImagePath);
+                    mod.PreviewImageSource = null;
+                    mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                    Console.WriteLine($"[DEBUG] 清空MOD {mod.Name} 的现有PreviewImageSource");
                 }
                 
-                File.Copy(imagePath, previewImagePath, true);
+                // 强制垃圾回收释放文件锁定
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                Thread.Sleep(300); // 增加等待时间确保文件锁定释放
                 
+                // 删除旧的预览图文件
+                if (File.Exists(previewImagePath))
+                {
+                    try
+                    {
+                        File.Delete(previewImagePath);
+                        Console.WriteLine($"[DEBUG] 删除旧预览图: {previewImagePath}");
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        Console.WriteLine($"[DEBUG] 删除旧预览图失败，尝试重命名: {deleteEx.Message}");
+                        var backupName = previewImagePath + ".old." + DateTime.Now.Ticks;
+                        try
+                        {
+                            File.Move(previewImagePath, backupName);
+                            Console.WriteLine($"[DEBUG] 旧预览图已重命名为: {backupName}");
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"[DEBUG] 无法处理旧预览图文件，强制继续");
+                        }
+                    }
+                }
+                
+                // 复制新的预览图到备份目录
+                File.Copy(imagePath, previewImagePath, true);
+                Console.WriteLine($"[DEBUG] 预览图已复制到: {previewImagePath}");
+                
+                // 更新MOD的预览图路径
                 mod.PreviewImagePath = previewImagePath;
                 mod.Icon = "🖼️";
                 
-                // 直接加载图片到ImageSource，不再需要刷新整个列表
+                // 重新加载预览图
                 LoadModPreviewImage(mod);
+                Console.WriteLine($"[DEBUG] 重新加载预览图完成, ImageSource = {mod.PreviewImageSource != null}");
                 
-                // 同时更新详情面板的预览图
-                UpdateModDetailPreview(mod);
+                // 强制UI更新
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    // 强制刷新当前MOD的数据绑定
+                    mod.OnPropertyChanged(nameof(Mod.PreviewImageSource));
+                    mod.OnPropertyChanged(nameof(Mod.PreviewImagePath));
+                    
+                    // 如果当前选中的是这个MOD，立即更新详情面板
+                    if (selectedMod?.RealName == mod.RealName)
+                    {
+                        UpdateModDetailPreview(mod);
+                        Console.WriteLine($"[DEBUG] 更新详情面板预览图完成");
+                    }
+                    
+                    // 强制刷新MOD列表显示（仅刷新UI，不重新加载数据）
+                    ModsGrid.InvalidateVisual();
+                    ModsGrid.UpdateLayout();
+                    
+                    Console.WriteLine($"[DEBUG] UI强制更新完成");
+                });
+                
+                // 短暂延迟后再次确认
+                Task.Delay(100).ContinueWith(_ =>
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        if (mod.PreviewImageSource == null)
+                        {
+                            Console.WriteLine($"[WARN] 预览图源仍为空，尝试重新加载");
+                            LoadModPreviewImage(mod);
+                        }
+                    });
+                });
                 
                 MessageBox.Show("预览图设置成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                Console.WriteLine($"[DEBUG] MOD {mod.Name} 预览图设置完成，路径: {previewImagePath}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"设置预览图失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 设置预览图失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
                 MessageBox.Show($"设置预览图失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -1770,7 +2287,7 @@ namespace UEModManager
                 if (settingsDialog == MessageBoxResult.OK)
                 {
                     // 保存设置并重新加载
-                    SaveConfiguration();
+                    SaveConfiguration(currentExecutableName);
                     MessageBox.Show("设置已保存！", "设置", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
@@ -1847,16 +2364,153 @@ namespace UEModManager
 
         private void EnableMod(Mod mod)
         {
-            // 实现启用MOD的逻辑
-            mod.Status = "已启用";
-            Console.WriteLine($"MOD {mod.Name} 已启用");
+            try
+            {
+                Console.WriteLine($"[DEBUG] 开始启用MOD: {mod.Name} (RealName: {mod.RealName})");
+
+                // 检查备份目录是否存在
+                var modBackupDir = IOPath.Combine(currentBackupPath, mod.RealName);
+                if (!Directory.Exists(modBackupDir))
+                {
+                    Console.WriteLine($"[ERROR] MOD备份目录不存在: {modBackupDir}");
+                    MessageBox.Show($"找不到MOD '{mod.Name}' 的备份文件。\n备份目录: {modBackupDir}", 
+                        "启用失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 获取备份目录中的所有MOD文件（排除预览图）
+                var backupFiles = Directory.GetFiles(modBackupDir, "*.*", SearchOption.AllDirectories)
+                    .Where(f => !IOPath.GetFileName(f).StartsWith("preview"))
+                    .ToList();
+
+                if (backupFiles.Count == 0)
+                {
+                    Console.WriteLine($"[ERROR] 备份目录中没有找到MOD文件: {modBackupDir}");
+                    MessageBox.Show($"MOD '{mod.Name}' 的备份目录中没有找到MOD文件。", 
+                        "启用失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                Console.WriteLine($"[DEBUG] 找到 {backupFiles.Count} 个备份文件");
+
+                // 确保~mods目录存在
+                if (!Directory.Exists(currentModPath))
+                {
+                    Directory.CreateDirectory(currentModPath);
+                    Console.WriteLine($"[DEBUG] 创建MOD目录: {currentModPath}");
+                }
+
+                // 创建MOD专属子目录（使用RealName作为文件夹名）
+                var modTargetDir = IOPath.Combine(currentModPath, mod.RealName);
+                if (Directory.Exists(modTargetDir))
+                {
+                    // 如果目录已存在，先清空
+                    Console.WriteLine($"[DEBUG] 清空现有MOD目录: {modTargetDir}");
+                    Directory.Delete(modTargetDir, true);
+                }
+                Directory.CreateDirectory(modTargetDir);
+
+                // 从备份目录复制所有文件到MOD目录
+                int copiedCount = 0;
+                foreach (var backupFile in backupFiles)
+                {
+                    // 计算相对于备份目录的路径
+                    var relativePath = IOPath.GetRelativePath(modBackupDir, backupFile);
+                    var targetFile = IOPath.Combine(modTargetDir, relativePath);
+
+                    // 确保目标目录存在
+                    var targetFileDir = IOPath.GetDirectoryName(targetFile);
+                    if (!Directory.Exists(targetFileDir))
+                    {
+                        Directory.CreateDirectory(targetFileDir);
+                    }
+
+                    // 复制文件
+                    File.Copy(backupFile, targetFile, true);
+                    Console.WriteLine($"[DEBUG] 复制文件: {IOPath.GetFileName(backupFile)} -> {relativePath}");
+                    copiedCount++;
+                }
+
+                // 更新MOD状态
+                mod.Status = "已启用";
+                
+                Console.WriteLine($"[DEBUG] MOD '{mod.Name}' 启用成功，复制了 {copiedCount} 个文件到 {modTargetDir}");
+                MessageBox.Show($"MOD '{mod.Name}' 已启用！\n复制了 {copiedCount} 个文件。", 
+                    "启用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 启用MOD失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+                MessageBox.Show($"启用MOD '{mod.Name}' 失败: {ex.Message}", 
+                    "启用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void DisableMod(Mod mod)
         {
-            // 实现禁用MOD的逻辑
-            mod.Status = "已禁用";
-            Console.WriteLine($"MOD {mod.Name} 已禁用");
+            try
+            {
+                Console.WriteLine($"[DEBUG] 开始禁用MOD: {mod.Name} (RealName: {mod.RealName})");
+
+                // 构建MOD目录路径（~mods/mod_real_name/）
+                var modTargetDir = IOPath.Combine(currentModPath, mod.RealName);
+                
+                // 检查MOD目录是否存在
+                if (!Directory.Exists(modTargetDir))
+                {
+                    Console.WriteLine($"[WARN] MOD目录不存在: {modTargetDir}");
+                    // 即使目录不存在，也更新状态为已禁用
+                    mod.Status = "已禁用";
+                    MessageBox.Show($"MOD '{mod.Name}' 已禁用。\n(游戏目录中未找到MOD文件)", 
+                        "禁用完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 验证备份是否存在（安全检查）
+                var modBackupDir = IOPath.Combine(currentBackupPath, mod.RealName);
+                if (!Directory.Exists(modBackupDir))
+                {
+                    Console.WriteLine($"[WARN] 备份目录不存在: {modBackupDir}，但继续禁用操作");
+                }
+
+                // 删除MOD目录及其所有内容
+                Console.WriteLine($"[DEBUG] 删除MOD目录: {modTargetDir}");
+                
+                // 获取要删除的文件列表（用于显示）
+                var filesToDelete = Directory.GetFiles(modTargetDir, "*.*", SearchOption.AllDirectories);
+                Console.WriteLine($"[DEBUG] 将删除 {filesToDelete.Length} 个文件");
+
+                // 删除整个MOD目录
+                Directory.Delete(modTargetDir, true);
+
+                // 更新MOD状态
+                mod.Status = "已禁用";
+                
+                Console.WriteLine($"[DEBUG] MOD '{mod.Name}' 禁用成功，已删除 {filesToDelete.Length} 个文件");
+                MessageBox.Show($"MOD '{mod.Name}' 已禁用！\n已删除 {filesToDelete.Length} 个文件。", 
+                    "禁用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.WriteLine($"[ERROR] 禁用MOD失败 - 访问被拒绝: {ex.Message}");
+                MessageBox.Show($"禁用MOD '{mod.Name}' 失败：文件被占用或权限不足。\n请关闭游戏后重试。", 
+                    "禁用失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                Console.WriteLine($"[WARN] MOD目录已不存在: {ex.Message}");
+                mod.Status = "已禁用";
+                MessageBox.Show($"MOD '{mod.Name}' 已禁用。\n(目录已不存在)", 
+                    "禁用完成", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 禁用MOD失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+                MessageBox.Show($"禁用MOD '{mod.Name}' 失败: {ex.Message}", 
+                    "禁用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void UpdateCategoryCount()
@@ -1966,20 +2620,88 @@ namespace UEModManager
                     return;
                 }
 
-                // 查找游戏可执行文件
-                string[] exeFiles = Directory.GetFiles(currentGamePath, "*.exe", SearchOption.AllDirectories);
-                if (exeFiles.Length > 0)
+                if (!Directory.Exists(currentGamePath))
                 {
-                    Process.Start(exeFiles[0]);
+                    MessageBox.Show("游戏路径不存在，请重新配置游戏", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                string gameExecutablePath = "";
+
+                // 1. 优先使用保存的执行程序名称
+                if (!string.IsNullOrEmpty(currentExecutableName))
+                {
+                    gameExecutablePath = Path.Combine(currentGamePath, currentExecutableName);
+                    Console.WriteLine($"[DEBUG] 尝试使用保存的执行程序: {gameExecutablePath}");
+                    
+                    if (File.Exists(gameExecutablePath))
+                    {
+                        Console.WriteLine($"[DEBUG] 找到保存的执行程序文件: {currentExecutableName}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[DEBUG] 保存的执行程序文件不存在，需要重新查找");
+                        gameExecutablePath = "";
+                    }
+                }
+
+                // 2. 如果没有保存的执行程序或文件不存在，自动查找
+                if (string.IsNullOrEmpty(gameExecutablePath))
+                {
+                    Console.WriteLine($"[DEBUG] 开始自动查找游戏执行程序...");
+                    var detectedExecutableName = AutoDetectGameExecutable(currentGamePath, currentGameName);
+                    
+                    if (!string.IsNullOrEmpty(detectedExecutableName))
+                    {
+                        gameExecutablePath = Path.Combine(currentGamePath, detectedExecutableName);
+                        Console.WriteLine($"[DEBUG] 自动查找到执行程序: {detectedExecutableName}");
+                        
+                        // 更新并保存配置
+                        currentExecutableName = detectedExecutableName;
+                        SaveConfiguration(currentExecutableName);
+                        Console.WriteLine($"[DEBUG] 已更新并保存执行程序配置");
+                    }
+                }
+
+                // 3. 启动游戏
+                if (!string.IsNullOrEmpty(gameExecutablePath) && File.Exists(gameExecutablePath))
+                {
+                    Console.WriteLine($"[DEBUG] 启动游戏: {gameExecutablePath}");
+                    
+                    var processStartInfo = new ProcessStartInfo
+                    {
+                        FileName = gameExecutablePath,
+                        WorkingDirectory = currentGamePath,
+                        UseShellExecute = true
+                    };
+                    
+                    Process.Start(processStartInfo);
+                    
+                    MessageBox.Show($"游戏 '{currentGameName}' 启动成功！\n\n" +
+                                  $"执行程序: {Path.GetFileName(gameExecutablePath)}", 
+                                  "启动成功", 
+                                  MessageBoxButton.OK, 
+                                  MessageBoxImage.Information);
                 }
                 else
                 {
-                    MessageBox.Show("在游戏目录中找不到可执行文件", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"无法找到游戏可执行文件。\n\n" +
+                                  $"游戏路径: {currentGamePath}\n" +
+                                  $"请检查游戏是否正确安装，或手动重新配置游戏路径。", 
+                                  "启动失败", 
+                                  MessageBoxButton.OK, 
+                                  MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"启动游戏失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Console.WriteLine($"[ERROR] 启动游戏失败: {ex.Message}");
+                MessageBox.Show($"启动游戏失败: {ex.Message}\n\n" +
+                              $"游戏: {currentGameName}\n" +
+                              $"路径: {currentGamePath}", 
+                              "启动错误", 
+                              MessageBoxButton.OK, 
+                              MessageBoxImage.Error);
             }
         }
 
@@ -2028,8 +2750,28 @@ namespace UEModManager
                 if (ModOriginalNameText != null) ModOriginalNameText.Text = mod.RealName;
                 if (ModImportDateText != null) ModImportDateText.Text = mod.ImportDate;
 
+                // 根据MOD状态更新滑动开关
+                bool isEnabled = mod.Status == "已启用";
+                UpdateToggleState(isEnabled);
+                Console.WriteLine($"[DEBUG] 更新滑动开关状态: MOD={mod.Name}, 状态={mod.Status}, 开关={isEnabled}");
+
+                // 更新状态文字颜色
+                if (ModStatusText != null)
+                {
+                    if (isEnabled)
+                    {
+                        ModStatusText.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // #10B981 绿色
+                    }
+                    else
+                    {
+                        ModStatusText.Foreground = new SolidColorBrush(Color.FromRgb(107, 114, 128)); // #6B7280 灰色
+                    }
+                }
+
                 // 更新预览图
                 UpdateModDetailPreview(mod);
+                
+                Console.WriteLine($"[DEBUG] 详情面板更新完成: {mod.Name}");
             }
             catch (Exception ex)
             {
@@ -2042,41 +2784,64 @@ namespace UEModManager
         {
             try
             {
+                Console.WriteLine($"[DEBUG] 更新详情面板预览图: MOD={mod?.Name}, HasImageSource={mod?.PreviewImageSource != null}");
+                
+                // 首先尝试使用已加载的ImageSource
                 if (mod?.PreviewImageSource != null && ModDetailPreviewImage != null)
                 {
                     ModDetailPreviewImage.Source = mod.PreviewImageSource;
                     ModDetailPreviewImage.Visibility = Visibility.Visible;
                     if (ModDetailIconContainer != null)
                         ModDetailIconContainer.Visibility = Visibility.Collapsed;
+                    Console.WriteLine($"[DEBUG] 使用PreviewImageSource显示预览图: {mod.Name}");
+                    return;
                 }
-                else if (!string.IsNullOrEmpty(mod?.PreviewImagePath) && File.Exists(mod.PreviewImagePath) && ModDetailPreviewImage != null)
+                
+                // 备用方案：如果ImageSource为空但路径有效，尝试重新加载
+                if (!string.IsNullOrEmpty(mod?.PreviewImagePath) && File.Exists(mod.PreviewImagePath) && ModDetailPreviewImage != null)
                 {
-                    // 备用方案：直接从文件加载
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.UriSource = new Uri(mod.PreviewImagePath, UriKind.Absolute);
-                    bitmap.EndInit();
-                    ModDetailPreviewImage.Source = bitmap;
-                    ModDetailPreviewImage.Visibility = Visibility.Visible;
-                    if (ModDetailIconContainer != null)
-                        ModDetailIconContainer.Visibility = Visibility.Collapsed;
-                }
-                else
-                {
-                    // 没有预览图，显示图标占位符
-                    if (ModDetailPreviewImage != null)
+                    try
                     {
-                        ModDetailPreviewImage.Source = null;
-                        ModDetailPreviewImage.Visibility = Visibility.Collapsed;
+                        Console.WriteLine($"[DEBUG] 尝试从文件重新加载预览图: {mod.PreviewImagePath}");
+                        
+                        // 使用Uri方式加载图片，避免缓存问题
+                        var uri = new Uri(mod.PreviewImagePath, UriKind.Absolute);
+                        var bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.UriSource = uri;
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+                        
+                        ModDetailPreviewImage.Source = bitmap;
+                        ModDetailPreviewImage.Visibility = Visibility.Visible;
+                        if (ModDetailIconContainer != null)
+                            ModDetailIconContainer.Visibility = Visibility.Collapsed;
+                            
+                        Console.WriteLine($"[DEBUG] 成功从文件重新加载预览图: {mod.Name}");
+                        return;
                     }
-                    if (ModDetailIconContainer != null)
-                        ModDetailIconContainer.Visibility = Visibility.Visible;
+                    catch (Exception loadEx)
+                    {
+                        Console.WriteLine($"[DEBUG] 从文件加载预览图失败: {loadEx.Message}");
+                    }
                 }
+                
+                // 没有预览图，显示图标占位符
+                Console.WriteLine($"[DEBUG] 显示图标占位符");
+                if (ModDetailPreviewImage != null)
+                {
+                    ModDetailPreviewImage.Source = null;
+                    ModDetailPreviewImage.Visibility = Visibility.Collapsed;
+                }
+                if (ModDetailIconContainer != null)
+                    ModDetailIconContainer.Visibility = Visibility.Visible;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"更新MOD详情预览图失败: {ex.Message}");
+                // 发生异常时，回退到显示图标
                 if (ModDetailPreviewImage != null)
                 {
                     ModDetailPreviewImage.Source = null;
@@ -2262,5 +3027,33 @@ namespace UEModManager
         public string? GamePath { get; set; }
         public string? ModPath { get; set; }
         public string? BackupPath { get; set; }
+        public string? ExecutableName { get; set; }
+    }
+
+    // 转换器类定义
+    public class NullToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class InverseNullToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value == null ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
     }
 } 
