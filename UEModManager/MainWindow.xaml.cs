@@ -2598,14 +2598,239 @@ namespace UEModManager
             {
                 Console.WriteLine($"开始导入MOD文件: {filePath}");
                 
-                // 这里应该实现MOD文件的导入逻辑
-                // 暂时只显示消息
-                MessageBox.Show($"MOD导入功能正在开发中\n文件: {filePath}", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (!File.Exists(filePath))
+                {
+                    MessageBox.Show("文件不存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                var fileInfo = new FileInfo(filePath);
+                var fileName = Path.GetFileNameWithoutExtension(filePath);
+                var fileExtension = Path.GetExtension(filePath).ToLower();
+
+                Console.WriteLine($"[DEBUG] 导入文件: {fileName}, 扩展名: {fileExtension}, 大小: {fileInfo.Length} 字节");
+
+                // 创建MOD专用的备份目录
+                var modBackupDir = Path.Combine(currentBackupPath, fileName);
+                if (!Directory.Exists(modBackupDir))
+                {
+                    Directory.CreateDirectory(modBackupDir);
+                    Console.WriteLine($"[DEBUG] 创建MOD备份目录: {modBackupDir}");
+                }
+
+                bool importSuccess = false;
+
+                if (fileExtension == ".pak" || fileExtension == ".ucas" || fileExtension == ".utoc")
+                {
+                    // 直接复制MOD文件
+                    importSuccess = ImportDirectModFiles(filePath, fileName, modBackupDir);
+                }
+                else if (fileExtension == ".zip" || fileExtension == ".rar" || fileExtension == ".7z")
+                {
+                    // 解压缩并导入
+                    importSuccess = ImportCompressedMod(filePath, fileName, modBackupDir);
+                }
+                else
+                {
+                    MessageBox.Show($"不支持的文件格式: {fileExtension}\n支持的格式: .pak, .ucas, .utoc, .zip, .rar, .7z", 
+                        "格式错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (importSuccess)
+                {
+                    // 重新扫描MOD，更新列表
+                    InitializeModsForGame();
+                    
+                    MessageBox.Show($"MOD '{fileName}' 导入成功！", "导入成功", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    
+                    Console.WriteLine($"[DEBUG] MOD导入成功: {fileName}");
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"从文件导入MOD失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
                 MessageBox.Show($"导入失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 导入直接的MOD文件
+        private bool ImportDirectModFiles(string filePath, string modName, string targetDir)
+        {
+            try
+            {
+                var fileName = Path.GetFileName(filePath);
+                var targetPath = Path.Combine(targetDir, fileName);
+                
+                // 复制到备份目录
+                File.Copy(filePath, targetPath, true);
+                Console.WriteLine($"[DEBUG] 复制文件到备份目录: {targetPath}");
+
+                // 同时复制到MOD目录（如果是已启用的MOD）
+                if (!string.IsNullOrEmpty(currentModPath) && Directory.Exists(currentModPath))
+                {
+                    var modSubDir = Path.Combine(currentModPath, modName);
+                    if (!Directory.Exists(modSubDir))
+                    {
+                        Directory.CreateDirectory(modSubDir);
+                    }
+                    
+                    var modFilePath = Path.Combine(modSubDir, fileName);
+                    File.Copy(filePath, modFilePath, true);
+                    Console.WriteLine($"[DEBUG] 复制文件到MOD目录: {modFilePath}");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 导入直接MOD文件失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        // 导入压缩的MOD文件
+        private bool ImportCompressedMod(string filePath, string modName, string targetDir)
+        {
+            try
+            {
+                Console.WriteLine($"[DEBUG] 开始解压MOD压缩文件: {filePath}");
+                
+                // 创建临时解压目录
+                var tempDir = Path.Combine(Path.GetTempPath(), $"mod_temp_{Guid.NewGuid()}");
+                Directory.CreateDirectory(tempDir);
+                
+                try
+                {
+                    // 解压文件
+                    if (!ExtractCompressedFile(filePath, tempDir))
+                    {
+                        MessageBox.Show("解压文件失败", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return false;
+                    }
+
+                    // 查找MOD文件
+                    var modFiles = Directory.GetFiles(tempDir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => 
+                        {
+                            var ext = Path.GetExtension(f).ToLower();
+                            return ext == ".pak" || ext == ".ucas" || ext == ".utoc";
+                        })
+                        .ToList();
+
+                    if (modFiles.Count == 0)
+                    {
+                        MessageBox.Show("压缩文件中未找到有效的MOD文件", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return false;
+                    }
+
+                    Console.WriteLine($"[DEBUG] 在压缩文件中找到 {modFiles.Count} 个MOD文件");
+
+                    // 复制MOD文件到备份目录
+                    foreach (var modFile in modFiles)
+                    {
+                        var fileName = Path.GetFileName(modFile);
+                        var targetPath = Path.Combine(targetDir, fileName);
+                        File.Copy(modFile, targetPath, true);
+                        Console.WriteLine($"[DEBUG] 复制解压的MOD文件: {targetPath}");
+                    }
+
+                    // 查找并复制预览图
+                    var imageFiles = Directory.GetFiles(tempDir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => 
+                        {
+                            var ext = Path.GetExtension(f).ToLower();
+                            return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp" || ext == ".gif";
+                        })
+                        .ToList();
+
+                    if (imageFiles.Count > 0)
+                    {
+                        // 优先选择名称包含preview的图片
+                        var previewImage = imageFiles.FirstOrDefault(f => 
+                            Path.GetFileNameWithoutExtension(f).ToLower().Contains("preview")) 
+                            ?? imageFiles.First();
+
+                        var imageExt = Path.GetExtension(previewImage);
+                        var previewPath = Path.Combine(targetDir, $"preview{imageExt}");
+                        File.Copy(previewImage, previewPath, true);
+                        Console.WriteLine($"[DEBUG] 复制预览图: {previewPath}");
+                    }
+
+                    // 复制到MOD目录（如果是启用状态）
+                    if (!string.IsNullOrEmpty(currentModPath) && Directory.Exists(currentModPath))
+                    {
+                        var modSubDir = Path.Combine(currentModPath, modName);
+                        if (!Directory.Exists(modSubDir))
+                        {
+                            Directory.CreateDirectory(modSubDir);
+                        }
+
+                        foreach (var modFile in modFiles)
+                        {
+                            var fileName = Path.GetFileName(modFile);
+                            var modFilePath = Path.Combine(modSubDir, fileName);
+                            File.Copy(modFile, modFilePath, true);
+                            Console.WriteLine($"[DEBUG] 复制到MOD目录: {modFilePath}");
+                        }
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    // 清理临时目录
+                    try
+                    {
+                        if (Directory.Exists(tempDir))
+                        {
+                            Directory.Delete(tempDir, true);
+                            Console.WriteLine($"[DEBUG] 清理临时目录: {tempDir}");
+                        }
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        Console.WriteLine($"[DEBUG] 清理临时目录失败: {cleanupEx.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 导入压缩MOD失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        // 解压压缩文件
+        private bool ExtractCompressedFile(string filePath, string extractPath)
+        {
+            try
+            {
+                var fileExtension = Path.GetExtension(filePath).ToLower();
+                
+                if (fileExtension == ".zip")
+                {
+                    System.IO.Compression.ZipFile.ExtractToDirectory(filePath, extractPath, true);
+                    return true;
+                }
+                else if (fileExtension == ".rar" || fileExtension == ".7z")
+                {
+                    // 简化实现：显示提示信息，建议用户手动解压
+                    MessageBox.Show($"检测到 {fileExtension} 格式的压缩文件。\n\n" +
+                        "请手动解压此文件，然后导入解压后的MOD文件（.pak, .ucas, .utoc）。\n\n" +
+                        "支持直接拖拽解压后的文件到程序窗口进行导入。", 
+                        "需要手动解压", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return false;
+                }
+                
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 解压文件失败: {ex.Message}");
+                return false;
             }
         }
 
