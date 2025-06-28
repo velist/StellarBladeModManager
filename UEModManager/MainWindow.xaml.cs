@@ -268,6 +268,10 @@ namespace UEModManager
                 // 启动游戏按钮事件
                 LaunchGameBtn.Click += (s, e) => LaunchGame();
                 
+                // 筛选按钮事件
+                EnabledFilterBtn.Click += EnabledFilterBtn_Click;
+                DisabledFilterBtn.Click += DisabledFilterBtn_Click;
+                
                 Console.WriteLine("事件处理器设置完成");
             }
             catch (Exception ex)
@@ -627,51 +631,40 @@ namespace UEModManager
         /// </summary>
         private void LoadModPreviewImage(Mod mod)
         {
-            var logMessage = $"[{DateTime.Now:HH:mm:ss}] 尝试加载预览图: MOD={mod.Name}, Path={mod.PreviewImagePath}";
-            Console.WriteLine(logMessage);
-            File.AppendAllText("debug_log.txt", logMessage + Environment.NewLine);
+            Console.WriteLine($"[DEBUG] 开始加载预览图: MOD={mod.Name}, Path={mod.PreviewImagePath}");
             
             if (string.IsNullOrEmpty(mod.PreviewImagePath) || !File.Exists(mod.PreviewImagePath))
             {
-                var errorMessage = $"[{DateTime.Now:HH:mm:ss}] 预览图路径无效或文件不存在: {mod.PreviewImagePath}";
-                Console.WriteLine(errorMessage);
-                File.AppendAllText("debug_log.txt", errorMessage + Environment.NewLine);
-                
-                // 直接设置为null，不触发属性更改通知
-                mod.SetPreviewImageSourceDirect(null);
+                Console.WriteLine($"[DEBUG] 预览图路径无效或文件不存在: {mod.PreviewImagePath}");
+                mod.PreviewImageSource = null;
                 return;
             }
 
             try
             {
-                var startMessage = $"[{DateTime.Now:HH:mm:ss}] 开始加载图片文件: {mod.PreviewImagePath}";
-                Console.WriteLine(startMessage);
-                File.AppendAllText("debug_log.txt", startMessage + Environment.NewLine);
+                Console.WriteLine($"[DEBUG] 开始加载图片文件: {mod.PreviewImagePath}");
                 
-                // 使用更简单的方式加载图片
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                bitmap.UriSource = new Uri(mod.PreviewImagePath, UriKind.Absolute);
-                bitmap.EndInit();
-                bitmap.Freeze(); // 跨线程访问必须冻结
-                
-                // 直接设置字段，避免触发属性更改通知
-                mod.SetPreviewImageSourceDirect(bitmap);
-                
-                var successMessage = $"[{DateTime.Now:HH:mm:ss}] 成功加载预览图: {mod.Name}, ImageSource={bitmap != null}";
-                Console.WriteLine(successMessage);
-                File.AppendAllText("debug_log.txt", successMessage + Environment.NewLine);
+                // 使用FileStream方式加载，避免缓存和锁定问题
+                using (var fileStream = new FileStream(mod.PreviewImagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                    bitmap.StreamSource = fileStream;
+                    bitmap.EndInit();
+                    bitmap.Freeze(); // 跨线程访问必须冻结
+                    
+                    // 正确设置PreviewImageSource属性，触发UI更新
+                    mod.PreviewImageSource = bitmap;
+                    
+                    Console.WriteLine($"[DEBUG] 成功加载预览图: {mod.Name}, ImageSource已设置");
+                }
             }
             catch (Exception ex)
             {
-                var errorMessage = $"[{DateTime.Now:HH:mm:ss}] 预加载图片失败: {mod.PreviewImagePath}, 错误: {ex.Message}";
-                Console.WriteLine(errorMessage);
-                File.AppendAllText("debug_log.txt", errorMessage + Environment.NewLine);
-                
-                // 直接设置为null，不触发属性更改通知
-                mod.SetPreviewImageSourceDirect(null);
+                Console.WriteLine($"[DEBUG] 预加载图片失败: {mod.PreviewImagePath}, 错误: {ex.Message}");
+                mod.PreviewImageSource = null;
             }
         }
 
@@ -1750,12 +1743,62 @@ namespace UEModManager
 
         private void NotificationButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("通知功能暂未实现", "通知", MessageBoxButton.OK, MessageBoxImage.Information);
+            try
+            {
+                var message = $"🎉 虚幻引擎MOD管理器 v1.9\n\n" +
+                            $"✅ 当前已加载 {allMods.Count} 个MOD\n" +
+                            $"📊 已启用MOD: {allMods.Count(m => m.Status == "已启用")} 个\n" +
+                            $"⏸️ 已禁用MOD: {allMods.Count(m => m.Status == "已禁用")} 个\n\n" +
+                            $"🎮 当前游戏: {(string.IsNullOrEmpty(currentGameName) ? "未选择" : currentGameName)}\n" +
+                            $"📁 MOD目录: {currentModPath}\n" +
+                            $"💾 备份目录: {currentBackupPath}\n\n" +
+                            $"💡 提示：定期备份您的存档和MOD文件！";
+                
+                MessageBox.Show(message, "系统状态", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"获取系统状态失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("设置功能暂未实现", "设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            try
+            {
+                var settingsDialog = ShowSettingsDialog();
+                if (settingsDialog == MessageBoxResult.OK)
+                {
+                    // 保存设置并重新加载
+                    SaveConfiguration();
+                    MessageBox.Show("设置已保存！", "设置", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开设置失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private MessageBoxResult ShowSettingsDialog()
+        {
+            var currentSettings = $"当前设置：\n\n" +
+                                $"🎮 游戏名称: {currentGameName}\n" +
+                                $"📁 游戏路径: {currentGamePath}\n" +
+                                $"📦 MOD路径: {currentModPath}\n" +
+                                $"💾 备份路径: {currentBackupPath}\n\n" +
+                                $"是否要重新配置游戏路径？";
+            
+            var result = MessageBox.Show(currentSettings, "设置 - 虚幻引擎MOD管理器", 
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+            
+            if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(currentGameName))
+            {
+                ShowGamePathDialog(currentGameName);
+                return MessageBoxResult.OK;
+            }
+            
+            return result;
         }
 
         private void ToggleModStatus(object sender, RoutedEventArgs e)

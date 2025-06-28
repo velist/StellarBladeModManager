@@ -129,7 +129,7 @@
                     <!-- Logo和标题 - 渐变色无背景 -->
                     <StackPanel Orientation="Horizontal">
                         <TextBlock FontSize="18" Text="📦" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="爱酱MOD管理器" FontSize="16" FontWeight="Bold" VerticalAlignment="Center">
+                        <TextBlock Text="虚幻引擎MOD管理器" FontSize="16" FontWeight="Bold" VerticalAlignment="Center">
                             <TextBlock.Foreground>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                     <GradientStop Color="#00D4AA" Offset="0"/>
@@ -152,9 +152,10 @@
                               SelectionChanged="GameList_SelectionChanged"
                               Margin="25,0,0,0">
                         <ComboBoxItem Content="请选择游戏"/>
-                        <ComboBoxItem Content="剑星"/>
+                        <ComboBoxItem Content="剑星 (Stellar Blade)"/>
                         <ComboBoxItem Content="黑神话·悟空"/>
                         <ComboBoxItem Content="光与影：33号远征队"/>
+                        <ComboBoxItem Content="其他虚幻引擎游戏"/>
                         <ComboBox.Style>
                             <!-- 临时简化样式，用于诊断StaticResourceHolder错误 -->
                             <Style TargetType="ComboBox">
@@ -564,7 +565,7 @@
                            Foreground="#94A3B8" FontSize="12" Margin="20,0" Width="400"/>
                 <TextBlock x:Name="SystemInfoText" Text="已加载MOD: 54/54 | 内存占用: 54.0GB" 
                            Foreground="#94A3B8" FontSize="12" Margin="20,0"/>
-                <TextBlock Text="爱酱MOD管理器 v1.6.4 (20250619) | B站：空[竹竹] [QQ群：69270794]" 
+                <TextBlock Text="虚幻引擎MOD管理器 v1.9.0 (20250105) | 支持黑神话·悟空、剑星等UE游戏" 
                            Foreground="#94A3B8" FontSize="12" HorizontalAlignment="Right" Margin="20,0"/>
             </StackPanel>
         </Border>
