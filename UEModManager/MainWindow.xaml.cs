@@ -1858,7 +1858,7 @@ namespace UEModManager
                     Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
                     AllowsTransparency = true,
                     PopupAnimation = PopupAnimation.Fade,
-                    StaysOpen = false
+                    StaysOpen = true  // 改为true，手动控制关闭
                 };
 
                 var border = new Border
@@ -1944,6 +1944,34 @@ namespace UEModManager
                 // 添加弹窗关闭事件处理
                 popup.Closed += (s, e) => {
                     Console.WriteLine("[DEBUG] 类型选择弹窗已关闭");
+                };
+                
+                // 添加点击外部关闭功能
+                popup.MouseDown += (s, e) => {
+                    if (e.OriginalSource == popup)
+                    {
+                        popup.IsOpen = false;
+                    }
+                };
+                
+                // 添加失去焦点关闭功能（延迟执行避免立即关闭）
+                DispatcherTimer closeTimer = null;
+                popup.LostFocus += (s, e) => {
+                    closeTimer?.Stop();
+                    closeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                    closeTimer.Tick += (sender, args) => {
+                        closeTimer.Stop();
+                        if (!popup.IsKeyboardFocusWithin && !popup.IsMouseOver)
+                        {
+                            popup.IsOpen = false;
+                        }
+                    };
+                    closeTimer.Start();
+                };
+                
+                // 鼠标进入时取消关闭
+                popup.MouseEnter += (s, e) => {
+                    closeTimer?.Stop();
                 };
                 
                 popup.IsOpen = true;
