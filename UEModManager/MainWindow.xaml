@@ -19,15 +19,17 @@
         <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
         <local:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter"/>
         
-        <!-- 分类项样式 - 修复为预期样式 -->
+        <!-- 分类项样式 - 支持多级分类和拖拽 -->
         <Style x:Key="CategoryItemStyle" TargetType="ListBoxItem">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="AllowDrop" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border Name="Border" Background="Transparent" CornerRadius="8" Padding="12,10" Margin="0">
+                        <Border Name="Border" Background="Transparent" CornerRadius="8" Padding="12,10" Margin="0"
+                                AllowDrop="True">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -53,12 +55,13 @@
                                 <Setter TargetName="Border" Property="Background" Value="#FBBF24"/>
                                 <Setter TargetName="CategoryName" Property="Foreground" Value="#1E2A3A"/>
                             </Trigger>
+
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-
+        
         <!-- 圆角渐变按钮样式 - 增强对比度 -->
         <Style x:Key="GradientCornerButton" TargetType="Button">
             <Setter Property="Foreground" Value="#1E2A3A"/>
@@ -564,7 +567,8 @@
                     <TextBlock x:Name="ModCountText" Text="全部 MOD (0)" FontSize="18" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" HorizontalAlignment="Left"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Border BorderBrush="#2A3441" BorderThickness="1" CornerRadius="8" Padding="8,5" Margin="0,0,10,0">
-                            <CheckBox Content="全选" Foreground="White" VerticalAlignment="Center"/>
+                            <CheckBox x:Name="SelectAllCheckBox" Content="全选" Foreground="White" VerticalAlignment="Center" 
+                                      Checked="SelectAllCheckBox_Checked" Unchecked="SelectAllCheckBox_Unchecked"/>
                         </Border>
                         <Button x:Name="ImportModBtn" Content="📥 导入MOD" Style="{StaticResource GradientCornerButton}"/>
                     </StackPanel>
@@ -586,6 +590,12 @@
                                         <MenuItem x:Name="EnableModMenuItem" Header="启用MOD" Click="EnableModMenuItem_Click"/>
                                         <MenuItem x:Name="DisableModMenuItem" Header="禁用MOD" Click="DisableModMenuItem_Click"/>
                                         <Separator/>
+                                        <MenuItem Header="移动到分类" x:Name="MoveToCategoryMenuItem" Click="MoveToCategoryMenuItem_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="📁" FontSize="12"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator/>
                                         <MenuItem Header="重命名" Click="RenameModMenuItem_Click"/>
                                         <MenuItem Header="修改预览图" Click="ChangePreviewMenuItem_Click"/>
                                         <Separator/>
@@ -601,6 +611,17 @@
                                             </Setter.Value>
                                         </Setter>
                                         <Style.Triggers>
+                                            <!-- 选中状态样式 -->
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BorderBrush" Value="#10B981"/>
+                                                <Setter Property="BorderThickness" Value="2"/>
+                                                <Setter Property="Effect">
+                                                    <Setter.Value>
+                                                        <DropShadowEffect ShadowDepth="0" BlurRadius="15" Color="#10B981" Opacity="0.6"/>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                            <!-- 鼠标悬停样式 -->
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter Property="BorderBrush" Value="#FBBF24"/>
                                                 <Setter Property="Effect">

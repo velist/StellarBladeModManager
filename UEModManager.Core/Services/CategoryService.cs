@@ -205,13 +205,11 @@ namespace UEModManager.Core.Services
 
             var defaultCategories = new[]
             {
-                "全部",
-                "已启用", 
-                "已禁用",
-                "服装",
                 "面部",
+                "人物", 
                 "武器",
-                "环境",
+                "服装",
+                "修改",
                 "其他"
             };
 

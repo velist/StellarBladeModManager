@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Controls.Primitives;
 using System.ComponentModel;
 using System.IO;
 using System.IO.Compression;
@@ -20,6 +22,10 @@ using System.Collections;
 using System.Threading;
 using System.Globalization;
 using System.Threading.Tasks;
+using UEModManager.Core.Services;
+using UEModManager.Core.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 // 解决Path命名冲突
 using IOPath = System.IO.Path;
@@ -34,7 +40,7 @@ namespace UEModManager
         private DispatcherTimer? statsTimer;
         private Mod? selectedMod;
         private List<Mod> allMods = new List<Mod>();
-        private List<Category> categories = new List<Category>();
+        private ObservableCollection<Category> categories = new ObservableCollection<Category>();
         private string currentGamePath = "";
         private string currentModPath = "";
         private string currentBackupPath = "";
@@ -42,6 +48,11 @@ namespace UEModManager
         private string currentExecutableName = "";  // 添加执行程序名称字段
         private string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
         private readonly List<string> modTags = new List<string> { "面部", "人物", "武器", "修改", "其他" };
+        // 添加CategoryService支持
+        private CategoryService? _categoryService;
+        private ModService? _modService;
+        private ILogger<MainWindow>? _logger;
+
         // 主构造函数
         public MainWindow()
         {
@@ -49,9 +60,9 @@ namespace UEModManager
             {
                 // 分配控制台窗口以便调试（仅在Debug模式下）
                 #if DEBUG
-                AllocConsole();
-                Console.WriteLine("=== UEModManager Debug Console ===");
-                Console.WriteLine($"程序启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                // AllocConsole(); // 暂时注释掉，可能导致崩溃
+                // Console.WriteLine("=== UEModManager Debug Console ===");
+                // Console.WriteLine($"程序启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
                 #endif
 
                 InitializeComponent();
@@ -72,13 +83,16 @@ namespace UEModManager
                     CheckAndRestoreGameConfiguration();
                 };
                 
+                // 添加关闭事件处理，保存分类数据
+                this.Closing += MainWindow_Closing;
+                
                 StartStatsTimer();
                 
-                Console.WriteLine("MainWindow 初始化完成");
+                // Console.WriteLine("MainWindow 初始化完成");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"主窗口初始化失败: {ex.Message}");
+                // Console.WriteLine($"主窗口初始化失败: {ex.Message}");
                 MessageBox.Show($"主窗口初始化失败: {ex.Message}", "初始化错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
@@ -243,14 +257,15 @@ namespace UEModManager
 
         private void InitializeData()
         {
+            // 初始化服务
+            InitializeServices();
+            
             // 初始化游戏列表 - 先不设置选中项，等待配置恢复
             // GameList.SelectedIndex = 0; // 移除这行，让配置恢复来设置
 
             // 初始化分类 - 首次打开只有全部分类
-            categories = new List<Category>
-            {
-                new Category { Name = "全部", Count = 0 }
-            };
+            categories.Clear();
+            categories.Add(new Category { Name = "全部", Count = 0 });
 
             // 初始化空的MOD列表
             allMods = new List<Mod>();
@@ -281,6 +296,9 @@ namespace UEModManager
                 
                 // 分类列表事件
                 CategoryList.SelectionChanged += CategoryList_SelectionChanged;
+                CategoryList.DragEnter += CategoryList_DragEnter;
+                CategoryList.DragOver += CategoryList_DragOver;
+                CategoryList.Drop += CategoryList_Drop;
                 
                 // 搜索框事件
                 SearchBox.TextChanged += SearchBox_TextChanged;
@@ -400,6 +418,7 @@ namespace UEModManager
                 try
                 {
                     InitializeModsForGame();
+                    InitializeCategoriesForGame();
                     
                     var executableInfo = !string.IsNullOrEmpty(executableName) 
                         ? $"\n游戏程序: {executableName}" 
@@ -569,6 +588,9 @@ namespace UEModManager
 
                 RefreshModDisplay();
                 UpdateCategoryCount();
+                
+                // 初始化分类系统
+                InitializeCategoriesForGame();
                 
                 selectedMod = null;
                 ClearModDetails();
@@ -1816,6 +1838,9 @@ namespace UEModManager
         // === 标签切换事件 ===
         private void TypeTag_MouseDown(object sender, MouseButtonEventArgs e)
         {
+            // 防止事件冒泡
+            e.Handled = true;
+            
             if (sender is Border border && border.Tag is Mod mod)
             {
                 ShowTypeSelectionMenu(border, mod);
@@ -1824,34 +1849,111 @@ namespace UEModManager
 
         private void ShowTypeSelectionMenu(FrameworkElement element, Mod mod)
         {
-            var contextMenu = new ContextMenu
+            try
             {
-                Background = new SolidColorBrush(Color.FromRgb(42, 52, 65)),
-                Foreground = Brushes.White
-            };
+                // 使用Popup而不是ContextMenu来避免立即关闭问题
+                var popup = new Popup
+                {
+                    PlacementTarget = element,
+                    Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                    AllowsTransparency = true,
+                    PopupAnimation = PopupAnimation.Fade,
+                    StaysOpen = false
+                };
 
-            var types = new[] { "👥 面部", "👤 人物", "⚔️ 武器", "👕 服装", "🔧 修改", "📦 其他" };
-            
-            foreach (var type in types)
-            {
-                var menuItem = new MenuItem
+                var border = new Border
                 {
-                    Header = type,
-                    Tag = mod
+                    Background = new SolidColorBrush(Color.FromRgb(42, 52, 65)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(5)
                 };
-                menuItem.Click += (s, e) =>
+
+                var stackPanel = new StackPanel();
+                var types = new[] { "👥 面部", "👤 人物", "⚔️ 武器", "👕 服装", "🔧 修改", "📦 其他" };
+                
+                foreach (var type in types)
                 {
-                    var typeText = type.Substring(2); // 移除emoji前缀
-                    mod.Type = typeText;
-                    RefreshModDisplay();
-                    UpdateCategoryCount();
+                    var typeText = type.Substring(2).Trim(); // 移除emoji前缀并清理空格
+                    var button = new Button
+                    {
+                        Content = type,
+                        Background = mod.Type == typeText ? 
+                            new SolidColorBrush(Color.FromRgb(16, 185, 129)) : 
+                            Brushes.Transparent,
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(0),
+                        Padding = new Thickness(10, 5, 10, 5),
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                        FontWeight = mod.Type == typeText ? FontWeights.Bold : FontWeights.Normal,
+                        Cursor = Cursors.Hand
+                    };
+                    
+                    // 鼠标悬停效果
+                    button.MouseEnter += (s, e) =>
+                    {
+                        if (mod.Type != typeText)
+                        {
+                            button.Background = new SolidColorBrush(Color.FromRgb(75, 85, 99));
+                        }
+                    };
+                    button.MouseLeave += (s, e) =>
+                    {
+                        if (mod.Type != typeText)
+                        {
+                            button.Background = Brushes.Transparent;
+                        }
+                    };
+                    
+                    button.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            Console.WriteLine($"[DEBUG] 更改MOD {mod.Name} 的类型从 '{mod.Type}' 到 '{typeText}'");
+                            
+                            // 更新MOD的类型
+                            mod.Type = typeText;
+                            
+                            // 同时更新MOD的分类，将类型作为分类
+                            mod.Categories.Clear();
+                            mod.Categories.Add(typeText);
+                            
+                            // 关闭弹窗
+                            popup.IsOpen = false;
+                            
+                            // 刷新显示
+                            RefreshModDisplay();
+                            RefreshCategoryDisplay();
+                            
+                            Console.WriteLine($"[DEBUG] MOD类型更新完成: {mod.Name} -> {typeText}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ERROR] 更新MOD类型失败: {ex.Message}");
+                        }
+                    };
+                    
+                    stackPanel.Children.Add(button);
+                }
+
+                border.Child = stackPanel;
+                popup.Child = border;
+                
+                // 添加弹窗关闭事件处理
+                popup.Closed += (s, e) => {
+                    Console.WriteLine("[DEBUG] 类型选择弹窗已关闭");
                 };
-                contextMenu.Items.Add(menuItem);
+                
+                popup.IsOpen = true;
+                Console.WriteLine($"[DEBUG] 显示类型选择弹窗，当前MOD类型: {mod.Type}");
             }
-
-            contextMenu.PlacementTarget = element;
-            contextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            contextMenu.IsOpen = true;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 显示类型选择弹窗失败: {ex.Message}");
+                MessageBox.Show($"显示类型选择弹窗失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void ChangeModType_Click(object sender, RoutedEventArgs e)
@@ -1943,6 +2045,75 @@ namespace UEModManager
                 DeleteSpecificMod(mod);
             }
         }
+        
+        // 移动MOD到分类的菜单项点击事件
+        private void MoveToCategoryMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is MenuItem menuItem && GetModFromContextMenu(menuItem) is Mod mod)
+                {
+                    ShowMoveToCategoryDialog(mod);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"移动到分类失败: {ex.Message}");
+                MessageBox.Show($"移动到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        
+        // 显示移动到分类的对话框
+        private void ShowMoveToCategoryDialog(Mod mod)
+        {
+            try
+            {
+                if (_categoryService == null || !_categoryService.Categories.Any())
+                {
+                    MessageBox.Show("暂无可用分类，请先创建分类", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 获取自定义分类列表
+                var categoryNames = _categoryService.Categories
+                    .Where(c => !new[] { "全部", "已启用", "已禁用" }.Contains(c.Name))
+                    .Select(c => c.Name)
+                    .ToList();
+
+                if (!categoryNames.Any())
+                {
+                    MessageBox.Show("暂无自定义分类，请先创建分类", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 简单的输入对话框方式选择分类
+                var categoryList = string.Join(", ", categoryNames);
+                var selectedCategory = ShowInputDialog($"可用分类: {categoryList}\n\n请输入要移动到的分类名称:", "移动到分类", mod.Categories?.FirstOrDefault() ?? "");
+                
+                if (!string.IsNullOrEmpty(selectedCategory) && categoryNames.Contains(selectedCategory))
+                {
+                    // 更新MOD的分类
+                    mod.Categories = new List<string> { selectedCategory };
+                    
+                    // 刷新分类显示以更新数量
+                    RefreshCategoryDisplay();
+                    
+                    Console.WriteLine($"[DEBUG] MOD {mod.Name} 已移动到分类: {selectedCategory}");
+                    MessageBox.Show($"MOD '{mod.Name}' 已移动到分类 '{selectedCategory}'", "移动成功", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else if (!string.IsNullOrEmpty(selectedCategory))
+                {
+                    MessageBox.Show($"分类 '{selectedCategory}' 不存在，请输入有效的分类名称", "分类不存在", 
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"显示移动分类对话框失败: {ex.Message}");
+                MessageBox.Show($"显示分类选择失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
         private Mod? GetModFromContextMenu(MenuItem menuItem)
         {
@@ -2030,21 +2201,99 @@ namespace UEModManager
                 
                 if (mod != null)
                 {
-                    // 更新选中的MOD
-                    selectedMod = mod;
+                    // 如果按住Ctrl键，则切换选中状态（多选模式）
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                    {
+                        mod.IsSelected = !mod.IsSelected;
+                        Console.WriteLine($"切换MOD选中状态: {mod.Name} -> {mod.IsSelected}");
+                        
+                        // 更新全选CheckBox状态
+                        UpdateSelectAllCheckBoxState();
+                    }
+                    else
+                    {
+                        // 普通点击，清除其他选择并设置详情
+                        ClearAllModsSelection();
+                        selectedMod = mod;
+                        UpdateModDetails(mod);
+                        HighlightSelectedCard(border);
+                        
+                        Console.WriteLine($"选中MOD: {mod.Name}");
+                    }
                     
-                    // 更新详情面板
-                    UpdateModDetails(mod);
-                    
-                    // 视觉反馈：高亮选中的卡片
-                    HighlightSelectedCard(border);
-                    
-                    Console.WriteLine($"选中MOD: {mod.Name}");
+                    // 支持拖拽功能 - 当有选中的MOD时
+                    if (e.LeftButton == MouseButtonState.Pressed)
+                    {
+                        var selectedMods = allMods.Where(m => m.IsSelected).ToList();
+                        if (!selectedMods.Any())
+                        {
+                            // 如果没有选中的MOD，则选中当前MOD
+                            mod.IsSelected = true;
+                            selectedMods.Add(mod);
+                        }
+                        
+                        if (selectedMods.Any())
+                        {
+                            // 创建拖拽数据
+                            var dragData = new DataObject("SelectedMods", selectedMods);
+                            DragDrop.DoDragDrop(border, dragData, DragDropEffects.Move);
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"选中MOD失败: {ex.Message}");
+                Console.WriteLine($"MOD卡片点击处理失败: {ex.Message}");
+            }
+        }
+        
+        // 清除所有MOD的选中状态
+        private void ClearAllModsSelection()
+        {
+            try
+            {
+                foreach (var mod in allMods)
+                {
+                    mod.IsSelected = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"清除MOD选中状态失败: {ex.Message}");
+            }
+        }
+        
+        // 更新全选CheckBox的状态
+        private void UpdateSelectAllCheckBoxState()
+        {
+            try
+            {
+                var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
+                if (currentMods != null && currentMods.Any())
+                {
+                    bool allSelected = currentMods.All(m => m.IsSelected);
+                    bool noneSelected = currentMods.All(m => !m.IsSelected);
+                    
+                    if (SelectAllCheckBox != null)
+                    {
+                        if (allSelected)
+                        {
+                            SelectAllCheckBox.IsChecked = true;
+                        }
+                        else if (noneSelected)
+                        {
+                            SelectAllCheckBox.IsChecked = false;
+                        }
+                        else
+                        {
+                            SelectAllCheckBox.IsChecked = null; // 部分选中状态
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新全选CheckBox状态失败: {ex.Message}");
             }
         }
 
@@ -2353,7 +2602,30 @@ namespace UEModManager
             {
                 if (ModCountText != null)
                 {
-                    ModCountText.Text = $"全部 MOD ({allMods.Count})";
+                    var selectedItem = CategoryList.SelectedItem;
+                    string categoryName = "全部";
+                    int modCount = allMods.Count;
+                    
+                    if (selectedItem is Category category)
+                    {
+                        categoryName = category.Name;
+                        modCount = category.Count;
+                    }
+                    else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
+                    {
+                        categoryName = categoryItem.Name;
+                        modCount = categoryItem.ModCount;
+                    }
+                    
+                    // 获取当前显示的MOD数量（考虑筛选结果）
+                    var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
+                    if (currentMods != null)
+                    {
+                        modCount = currentMods.Count();
+                    }
+                    
+                    ModCountText.Text = $"{categoryName} ({modCount})";
+                    Console.WriteLine($"[DEBUG] 更新C1区标题: {categoryName} ({modCount})");
                 }
             }
             catch (Exception ex)
@@ -2515,8 +2787,35 @@ namespace UEModManager
 
         private void UpdateCategoryCount()
         {
-            // 更新分类计数的逻辑
-            Console.WriteLine("更新分类计数");
+            try
+            {
+                // 更新旧版本分类的计数
+                foreach (var category in categories)
+                {
+                    switch (category.Name)
+                    {
+                        case "全部":
+                            category.Count = allMods.Count;
+                            break;
+                        case "已启用":
+                            category.Count = allMods.Count(m => m.Status == "已启用");
+                            break;
+                        case "已禁用":
+                            category.Count = allMods.Count(m => m.Status == "已禁用");
+                            break;
+                        default:
+                            // 其他分类暂时设为0，后续可以根据MOD的分类属性来计算
+                            category.Count = 0;
+                            break;
+                    }
+                }
+                
+                Console.WriteLine($"[DEBUG] 更新分类计数完成: 全部={allMods.Count}, 已启用={allMods.Count(m => m.Status == "已启用")}, 已禁用={allMods.Count(m => m.Status == "已禁用")}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新分类计数失败: {ex.Message}");
+            }
         }
 
         // 启动统计计时器
@@ -2543,12 +2842,70 @@ namespace UEModManager
         {
             try
             {
-                // 处理分类选择变化
-                RefreshModDisplay();
+                // 处理分类选择变化，根据选中的分类筛选MOD
+                FilterModsByCategory();
+                
+                // 更新C1区标题显示
+                UpdateModCountDisplay();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"分类选择变化处理失败: {ex.Message}");
+            }
+        }
+        
+        // 根据分类筛选MOD
+        private void FilterModsByCategory()
+        {
+            try
+            {
+                if (CategoryList.SelectedItem == null)
+                {
+                    // 没有选中分类，显示所有MOD
+                    ModsGrid.ItemsSource = allMods;
+                    Console.WriteLine($"[DEBUG] 未选中分类，显示所有MOD: {allMods.Count} 个");
+                    return;
+                }
+
+                var selectedItem = CategoryList.SelectedItem;
+                List<Mod> filteredMods = new List<Mod>();
+
+                if (selectedItem is Category category)
+                {
+                    // 处理默认分类
+                    switch (category.Name)
+                    {
+                        case "全部":
+                            filteredMods = allMods.ToList();
+                            break;
+                        default:
+                            // 其他分类，基于MOD的Type筛选
+                            filteredMods = allMods.Where(m => m.Type == category.Name || 
+                                (m.Categories != null && m.Categories.Contains(category.Name))).ToList();
+                            break;
+                    }
+                }
+                else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
+                {
+                    // 处理CategoryService分类
+                    if (categoryItem.Name == "全部")
+                    {
+                        filteredMods = allMods.ToList();
+                    }
+                    else
+                    {
+                        // 根据MOD的分类属性筛选
+                        filteredMods = allMods.Where(m => m.Categories.Contains(categoryItem.Name)).ToList();
+                        Console.WriteLine($"[DEBUG] 选中分类 '{categoryItem.Name}'，找到 {filteredMods.Count} 个MOD");
+                    }
+                }
+
+                ModsGrid.ItemsSource = filteredMods;
+                Console.WriteLine($"[DEBUG] 按分类筛选MOD完成，显示 {filteredMods.Count} 个MOD");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"按分类筛选MOD失败: {ex.Message}");
             }
         }
 
@@ -2563,6 +2920,55 @@ namespace UEModManager
             catch (Exception ex)
             {
                 Console.WriteLine($"搜索文本变化处理失败: {ex.Message}");
+            }
+        }
+        
+        // 全选CheckBox选中事件
+        private void SelectAllCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SetAllModsSelection(true);
+                Console.WriteLine("[DEBUG] 全选MOD");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"全选MOD失败: {ex.Message}");
+            }
+        }
+        
+        // 全选CheckBox取消选中事件  
+        private void SelectAllCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SetAllModsSelection(false);
+                Console.WriteLine("[DEBUG] 取消全选MOD");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"取消全选MOD失败: {ex.Message}");
+            }
+        }
+        
+        // 设置所有MOD的选中状态
+        private void SetAllModsSelection(bool isSelected)
+        {
+            try
+            {
+                var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
+                if (currentMods != null)
+                {
+                    foreach (var mod in currentMods)
+                    {
+                        mod.IsSelected = isSelected;
+                    }
+                    Console.WriteLine($"[DEBUG] 设置 {currentMods.Count()} 个MOD的选中状态为: {isSelected}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"设置MOD选中状态失败: {ex.Message}");
             }
         }
 
@@ -3082,51 +3488,195 @@ namespace UEModManager
         {
             try
             {
-                // 更新分类计数
-                UpdateCategoryCount();
+                // 确保在UI线程上执行
+                if (!Dispatcher.CheckAccess())
+                {
+                    Dispatcher.Invoke(() => RefreshCategoryDisplay());
+                    return;
+                }
                 
-                // 刷新MOD显示
-                RefreshModDisplay();
+                // 首先同步MOD的Type和Categories
+                foreach (var mod in allMods)
+                {
+                    // 确保MOD的Categories包含其Type
+                    if (!string.IsNullOrEmpty(mod.Type))
+                    {
+                        if (mod.Categories == null || !mod.Categories.Any())
+                        {
+                            mod.Categories = new List<string> { mod.Type };
+                        }
+                        else if (!mod.Categories.Contains(mod.Type))
+                        {
+                            // 如果Categories不包含Type，添加Type到Categories
+                            mod.Categories.Add(mod.Type);
+                        }
+                    }
+                    else
+                    {
+                        // 如果Type为空，设置为"其他"
+                        mod.Type = "其他";
+                        mod.Categories = new List<string> { "其他" };
+                    }
+                }
+                
+                // Console.WriteLine($"[DEBUG] CategoryService状态: {(_categoryService != null ? "已初始化" : "未初始化")}, " +
+                //     $"分类数量: {(_categoryService?.Categories.Count ?? 0)}");
+                
+                // 总是使用基于Type的分类显示，确保数字徽章正确
+                var typeCounts = allMods.GroupBy(m => m.Type ?? "其他")
+                    .ToDictionary(g => g.Key, g => g.Count());
+                
+                // 更新或创建基于Type的分类
+                var typeCategories = new List<Category>
+                {
+                    new Category { Name = "全部", Count = allMods.Count }
+                };
+                
+                foreach (var typeCount in typeCounts)
+                {
+                    typeCategories.Add(new Category { Name = typeCount.Key, Count = typeCount.Value });
+                }
+                
+                categories.Clear();
+                foreach (var category in typeCategories)
+                {
+                    categories.Add(category);
+                }
+                
+                CategoryList.ItemsSource = categories;
+                // Console.WriteLine($"[DEBUG] 刷新分类显示: 基于Type的分类 {categories.Count} 个");
+                // Console.WriteLine($"[DEBUG] 分类详情: {string.Join(", ", categories.Select(c => $"{c.Name}({c.Count})"))}");
+                
+                // 如果CategoryService可用，也更新其分类计数
+                if (_categoryService != null && _categoryService.Categories.Any())
+                {
+                    // 将allMods转换为ModInfo列表，使用实际的分类信息
+                    var modInfos = allMods.Select(m => new UEModManager.Core.Models.ModInfo 
+                    { 
+                        Name = m.Name, 
+                        IsEnabled = m.Status == "已启用",
+                        Categories = m.Categories?.Any() == true ? m.Categories : new List<string> { m.Type ?? "其他" }
+                    }).ToList();
+                    
+                    _categoryService.UpdateCategoryModCounts(modInfos);
+                    // Console.WriteLine($"[DEBUG] 同时更新了CategoryService的分类计数");
+                }
+                
+                // 保持选中状态
+                if (CategoryList.Items.Count > 0 && CategoryList.SelectedIndex < 0)
+                {
+                    CategoryList.SelectedIndex = 0;
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"刷新分类显示失败: {ex.Message}");
+                // Console.WriteLine($"刷新分类显示失败: {ex.Message}");
+                MessageBox.Show($"刷新分类显示失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         // 添加分类按钮点击事件
-        private void AddCategoryButton_Click(object sender, RoutedEventArgs e)
+        private async void AddCategoryButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 string categoryName = ShowInputDialog("请输入分类名称:", "添加分类");
                 if (!string.IsNullOrEmpty(categoryName))
                 {
-                    var newCategory = new Category { Name = categoryName, Count = 0 };
-                    categories.Add(newCategory);
-                    RefreshCategoryDisplay();
+                    if (_categoryService != null)
+                    {
+                        // 检查是否要添加为子分类
+                        CategoryItem? parentCategory = null;
+                        var selectedItem = CategoryList.SelectedItem;
+                        
+                        // 如果选中的是CategoryItem且不是默认分类，可以作为父分类
+                        if (selectedItem is CategoryItem selectedCategory && 
+                            !new[] { "全部", "已启用", "已禁用" }.Contains(selectedCategory.Name))
+                        {
+                            var result = MessageBox.Show($"是否要将 '{categoryName}' 添加为 '{selectedCategory.Name}' 的子分类？\n\n" +
+                                "点击'是'添加为子分类，点击'否'添加为根分类。", 
+                                "添加分类", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                            
+                            if (result == MessageBoxResult.Cancel)
+                                return;
+                            
+                            if (result == MessageBoxResult.Yes)
+                                parentCategory = selectedCategory;
+                        }
+                        
+                        // 使用CategoryService添加分类
+                        var newCategory = await _categoryService.AddCategoryAsync(categoryName, parentCategory);
+                        
+                        // 立即刷新分类显示
+                        RefreshCategoryDisplay();
+                        
+                        // 选中新添加的分类
+                        SelectCategoryInList(newCategory);
+                        
+                        Console.WriteLine($"[DEBUG] 成功添加分类: {newCategory.FullPath}");
+                        MessageBox.Show($"分类 '{categoryName}' 添加成功！", "添加分类", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        // 回退到旧方式（向后兼容）
+                        Dispatcher.Invoke(() => {
+                            var newCategory = new Category { Name = categoryName, Count = 0 };
+                            categories.Add(newCategory);
+                            RefreshCategoryDisplay();
+                        });
+                    }
                 }
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] 添加分类失败: {ex.Message}");
                 MessageBox.Show($"添加分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         // 删除分类按钮点击事件
-        private void DeleteCategoryButton_Click(object sender, RoutedEventArgs e)
+        private async void DeleteCategoryButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (CategoryList.SelectedItem is Category selectedCategory)
+                // 优先使用CategoryService的分类
+                if (_categoryService != null && CategoryList.SelectedItem is CategoryItem selectedCategoryItem)
                 {
+                    // 检查是否是默认分类
+                    var defaultCategories = new[] { "全部", "已启用", "已禁用" };
+                    if (defaultCategories.Contains(selectedCategoryItem.Name))
+                    {
+                        MessageBox.Show("默认分类不能删除", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                    
+                    var result = MessageBox.Show($"确定要删除分类 '{selectedCategoryItem.Name}' 吗？\n\n" +
+                        $"此操作将同时删除所有子分类。", 
+                        "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        await _categoryService.RemoveCategoryAsync(selectedCategoryItem);
+                        
+                        // 刷新分类显示
+                        RefreshCategoryDisplay();
+                        
+                        Console.WriteLine($"[DEBUG] 成功删除分类: {selectedCategoryItem.Name}");
+                        MessageBox.Show("分类删除成功！", "删除分类", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+                else if (CategoryList.SelectedItem is Category selectedCategory)
+                {
+                    // 回退到旧方式
                     var result = MessageBox.Show($"确定要删除分类 '{selectedCategory.Name}' 吗？", 
                         "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
                     
                     if (result == MessageBoxResult.Yes)
                     {
-                        categories.Remove(selectedCategory);
-                        RefreshCategoryDisplay();
+                        Dispatcher.Invoke(() => {
+                            categories.Remove(selectedCategory);
+                            RefreshCategoryDisplay();
+                        });
                     }
                 }
                 else
@@ -3136,17 +3686,48 @@ namespace UEModManager
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] 删除分类失败: {ex.Message}");
                 MessageBox.Show($"删除分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         // 重命名分类按钮点击事件
-        private void RenameCategoryButton_Click(object sender, RoutedEventArgs e)
+        private async void RenameCategoryButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (CategoryList.SelectedItem is Category selectedCategory)
+                // 优先使用CategoryService的分类
+                if (_categoryService != null && CategoryList.SelectedItem is CategoryItem selectedCategoryItem)
                 {
+                    // 检查是否是默认分类
+                    var defaultCategories = new[] { "全部", "已启用", "已禁用" };
+                    if (defaultCategories.Contains(selectedCategoryItem.Name))
+                    {
+                        MessageBox.Show("默认分类不能重命名", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                    
+                    string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategoryItem.Name);
+                    if (!string.IsNullOrEmpty(newName) && newName != selectedCategoryItem.Name)
+                    {
+                        bool success = await _categoryService.RenameCategoryAsync(selectedCategoryItem, newName);
+                        if (success)
+                        {
+                            // 刷新分类显示
+                            RefreshCategoryDisplay();
+                            
+                            Console.WriteLine($"[DEBUG] 成功重命名分类: {selectedCategoryItem.Name} -> {newName}");
+                            MessageBox.Show("分类重命名成功！", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                        else
+                        {
+                            MessageBox.Show("重命名失败，分类名称可能已存在", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                }
+                else if (CategoryList.SelectedItem is Category selectedCategory)
+                {
+                    // 回退到旧方式
                     string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategory.Name);
                     if (!string.IsNullOrEmpty(newName) && newName != selectedCategory.Name)
                     {
@@ -3161,7 +3742,279 @@ namespace UEModManager
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR] 重命名分类失败: {ex.Message}");
                 MessageBox.Show($"重命名分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void InitializeServices()
+        {
+            try
+            {
+                // 设置依赖注入容器
+                var services = new ServiceCollection();
+                services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
+                services.AddTransient<CategoryService>();
+                services.AddTransient<ModService>();
+                
+                var serviceProvider = services.BuildServiceProvider();
+                
+                _categoryService = serviceProvider.GetService<CategoryService>();
+                _modService = serviceProvider.GetService<ModService>();
+                _logger = serviceProvider.GetService<ILogger<MainWindow>>();
+                
+                Console.WriteLine("[DEBUG] CategoryService和ModService初始化完成");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 初始化服务失败: {ex.Message}");
+            }
+        }
+
+        private async void InitializeCategoriesForGame()
+        {
+            try
+            {
+                if (_categoryService != null && !string.IsNullOrEmpty(currentGameName))
+                {
+                    // 为当前游戏设置分类服务
+                    await _categoryService.SetCurrentGameAsync(currentGameName);
+                    
+                    // 如果没有分类，初始化默认分类
+                    if (!_categoryService.Categories.Any())
+                    {
+                        await _categoryService.InitializeDefaultCategoriesAsync();
+                    }
+                    
+                    // 刷新分类显示
+                    RefreshCategoryDisplay();
+                    
+                    Console.WriteLine($"[DEBUG] 为游戏 {currentGameName} 初始化分类完成，共 {_categoryService.Categories.Count} 个分类");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 初始化游戏分类失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 在分类列表中选中指定分类
+        /// </summary>
+        private void SelectCategoryInList(CategoryItem targetCategory)
+        {
+            try
+            {
+                if (CategoryList.ItemsSource is List<object> categories)
+                {
+                    for (int i = 0; i < categories.Count; i++)
+                    {
+                        if (categories[i] is CategoryItem categoryItem && categoryItem.Name == targetCategory.Name)
+                        {
+                            CategoryList.SelectedIndex = i;
+                            CategoryList.ScrollIntoView(categories[i]);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 选中分类失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 分类列表拖拽进入事件
+        /// </summary>
+        private void CategoryList_DragEnter(object sender, DragEventArgs e)
+        {
+            try
+            {
+                if (e.Data.GetDataPresent("SelectedMods"))
+                {
+                    e.Effects = DragDropEffects.Move;
+                }
+                else
+                {
+                    e.Effects = DragDropEffects.None;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 分类列表拖拽进入事件失败: {ex.Message}");
+                e.Effects = DragDropEffects.None;
+            }
+        }
+
+        /// <summary>
+        /// 分类列表拖拽悬停事件
+        /// </summary>
+        private void CategoryList_DragOver(object sender, DragEventArgs e)
+        {
+            try
+            {
+                if (e.Data.GetDataPresent("SelectedMods"))
+                {
+                    e.Effects = DragDropEffects.Move;
+                }
+                else
+                {
+                    e.Effects = DragDropEffects.None;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 分类列表拖拽悬停事件失败: {ex.Message}");
+                e.Effects = DragDropEffects.None;
+            }
+        }
+
+        /// <summary>
+        /// 分类列表拖拽放置事件
+        /// </summary>
+        private void CategoryList_Drop(object sender, DragEventArgs e)
+        {
+            try
+            {
+                if (e.Data.GetDataPresent("SelectedMods"))
+                {
+                    var selectedMods = e.Data.GetData("SelectedMods") as List<Mod>;
+                    if (selectedMods?.Any() == true)
+                    {
+                        // 获取拖拽目标分类
+                        var targetCategory = GetDropTargetCategory(e);
+                        if (targetCategory != null)
+                        {
+                            // 移动MOD到目标分类
+                            MoveModsToCategory(selectedMods, targetCategory);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 分类列表拖拽放置事件失败: {ex.Message}");
+                MessageBox.Show($"移动MOD到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 获取拖拽目标分类
+        /// </summary>
+        private object? GetDropTargetCategory(DragEventArgs e)
+        {
+            try
+            {
+                var position = e.GetPosition(CategoryList);
+                var hitTest = VisualTreeHelper.HitTest(CategoryList, position);
+                
+                if (hitTest?.VisualHit != null)
+                {
+                    var listBoxItem = FindParent<ListBoxItem>(hitTest.VisualHit);
+                    if (listBoxItem?.DataContext != null)
+                    {
+                        return listBoxItem.DataContext;
+                    }
+                }
+                
+                // 如果没有命中特定项，返回当前选中的分类
+                return CategoryList.SelectedItem;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 获取拖拽目标分类失败: {ex.Message}");
+                return CategoryList.SelectedItem;
+            }
+        }
+
+        /// <summary>
+        /// 查找父级控件
+        /// </summary>
+        private T? FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            var parent = VisualTreeHelper.GetParent(child);
+            if (parent == null) return null;
+            if (parent is T) return parent as T;
+            return FindParent<T>(parent);
+        }
+
+        /// <summary>
+        /// 窗口关闭事件处理
+        /// </summary>
+        private async void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            try
+            {
+                // 保存分类数据
+                if (_categoryService != null && !string.IsNullOrEmpty(currentGameName))
+                {
+                    Console.WriteLine("[DEBUG] 保存分类数据...");
+                    // CategoryService会在SetCurrentGameAsync中自动保存，这里我们手动触发一次保存
+                    await _categoryService.SetCurrentGameAsync(currentGameName);
+                }
+                
+                Console.WriteLine("[DEBUG] 程序正常退出");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 保存数据时出错: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 移动MOD到指定分类
+        /// </summary>
+        private void MoveModsToCategory(List<Mod> mods, object targetCategory)
+        {
+            try
+            {
+                string categoryName = "未分类";
+                
+                if (targetCategory is CategoryItem categoryItem)
+                {
+                    categoryName = categoryItem.Name;
+                }
+                else if (targetCategory is Category category)
+                {
+                    categoryName = category.Name;
+                }
+                
+                // 特殊处理"全部"分类
+                if (categoryName == "全部")
+                {
+                    MessageBox.Show("不能将MOD移动到'全部'分类", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                
+                // 更新MOD的分类
+                foreach (var mod in mods)
+                {
+                    if (!mod.Categories.Contains(categoryName))
+                    {
+                        mod.Categories.Clear();
+                        mod.Categories.Add(categoryName);
+                        Console.WriteLine($"[DEBUG] MOD '{mod.Name}' 已移动到分类 '{categoryName}'");
+                    }
+                }
+                
+                // 清除选中状态
+                foreach (var mod in mods)
+                {
+                    mod.IsSelected = false;
+                }
+                
+                // 刷新显示
+                RefreshCategoryDisplay();
+                FilterModsByCategory();
+                
+                MessageBox.Show($"成功将 {mods.Count} 个MOD移动到分类 '{categoryName}'", "移动完成", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 移动MOD到分类失败: {ex.Message}");
+                MessageBox.Show($"移动MOD到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }
@@ -3193,6 +4046,30 @@ namespace UEModManager
             {
                 _status = value;
                 OnPropertyChanged(nameof(Status));
+            }
+        }
+        
+        // 新增：MOD所属分类
+        private List<string> _categories = new List<string> { "未分类" };
+        public List<string> Categories
+        {
+            get => _categories;
+            set
+            {
+                _categories = value ?? new List<string> { "未分类" };
+                OnPropertyChanged(nameof(Categories));
+            }
+        }
+        
+        // 新增：是否被选中状态
+        private bool _isSelected = false;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                _isSelected = value;
+                OnPropertyChanged(nameof(IsSelected));
             }
         }
         
@@ -3281,4 +4158,6 @@ namespace UEModManager
             throw new NotImplementedException();
         }
     }
+
+
 } 
