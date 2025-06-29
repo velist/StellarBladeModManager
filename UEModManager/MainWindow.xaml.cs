@@ -93,7 +93,7 @@ namespace UEModManager
             catch (Exception ex)
             {
                 // Console.WriteLine($"主窗口初始化失败: {ex.Message}");
-                MessageBox.Show($"主窗口初始化失败: {ex.Message}", "初始化错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"主窗口初始化失败: {ex.Message}", "初始化错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
         }
@@ -153,7 +153,7 @@ namespace UEModManager
             catch (Exception ex)
             {
                 Console.WriteLine($"加载配置失败: {ex.Message}");
-                MessageBox.Show($"加载配置失败: {ex.Message}\n将使用默认设置。", "配置加载错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowCustomMessageBox($"加载配置失败: {ex.Message}\n将使用默认设置。", "配置加载错误", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         
@@ -1198,7 +1198,7 @@ namespace UEModManager
                 var mod = button?.DataContext as Mod;
                 if (mod != null)
                 {
-                    var result = MessageBox.Show($"确定要删除MOD \"{mod.Name}\" 吗？\n这将同时删除备份文件和MOD目录中的文件。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var result = ShowCustomMessageBox($"确定要删除MOD \"{mod.Name}\" 吗？\n这将同时删除备份文件和MOD目录中的文件。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (result == MessageBoxResult.Yes)
                     {
                         try
@@ -1235,18 +1235,18 @@ namespace UEModManager
                                 ClearModDetails();
                             }
                             
-                            MessageBox.Show($"已删除MOD: {mod.Name}", "删除成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                            ShowCustomMessageBox($"已删除MOD: {mod.Name}", "删除成功", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
                         catch (Exception deleteEx)
                         {
-                            MessageBox.Show($"删除MOD文件时发生错误: {deleteEx.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                            ShowCustomMessageBox($"删除MOD文件时发生错误: {deleteEx.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"删除MOD失败: {ex.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"删除MOD失败: {ex.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1366,6 +1366,257 @@ namespace UEModManager
             return okClicked ? result : "";
         }
 
+        // === 自定义深色主题MessageBox ===
+        private MessageBoxResult ShowCustomMessageBox(string message, string title, MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage icon = MessageBoxImage.None)
+        {
+            // 根据消息长度和类型决定窗口尺寸
+            int width = 450;
+            int height = 250;
+            
+            // 对于简短的成功/信息消息，使用更小的尺寸
+            if (icon == MessageBoxImage.Information && message.Length < 50)
+            {
+                width = 350;
+                height = 200;
+            }
+            // 对于较长的消息（如系统状态），使用更大的尺寸
+            else if (message.Length > 200)
+            {
+                width = 550;
+                height = 350;
+            }
+            
+            var messageWindow = new Window
+            {
+                Title = title,
+                Width = width,
+                Height = height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0B1426")),
+                WindowStyle = WindowStyle.None,
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
+                BorderThickness = new Thickness(1)
+            };
+
+            var mainGrid = new Grid();
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 按钮
+
+            // 自定义标题栏
+            var titleBar = new Border
+            {
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
+                Padding = new Thickness(15),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
+                BorderThickness = new Thickness(0, 0, 0, 1)
+            };
+
+            var titleGrid = new Grid();
+            var titleText = new TextBlock
+            {
+                Text = title,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                FontWeight = FontWeights.Bold,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var closeButton = new Button
+            {
+                Content = "✕",
+                Width = 30,
+                Height = 30,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9CA3AF")),
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                FontSize = 14,
+                Cursor = Cursors.Hand
+            };
+
+            titleGrid.Children.Add(titleText);
+            titleGrid.Children.Add(closeButton);
+            titleBar.Child = titleGrid;
+            Grid.SetRow(titleBar, 0);
+
+            // 内容区域
+            var contentGrid = new Grid();
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // 图标
+            string iconText = icon switch
+            {
+                MessageBoxImage.Information => "ℹ️",
+                MessageBoxImage.Warning => "⚠️",
+                MessageBoxImage.Error => "❌",
+                MessageBoxImage.Question => "❓",
+                _ => "💬"
+            };
+
+            var iconBlock = new TextBlock
+            {
+                Text = iconText,
+                FontSize = 32,
+                Margin = new Thickness(20, 20, 15, 20),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Grid.SetColumn(iconBlock, 0);
+
+            // 消息文本
+            var messageText = new TextBlock
+            {
+                Text = message,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                FontSize = 14,
+                Margin = new Thickness(0, 20, 20, 20),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(messageText, 1);
+
+            contentGrid.Children.Add(iconBlock);
+            contentGrid.Children.Add(messageText);
+            Grid.SetRow(contentGrid, 1);
+
+            // 按钮区域
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(20, 0, 20, 20),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1B2E"))
+            };
+
+            MessageBoxResult result = MessageBoxResult.None;
+
+            // 根据按钮类型创建按钮
+            switch (buttons)
+            {
+                case MessageBoxButton.OK:
+                    var okBtn = CreateMessageBoxButton("确定", true);
+                    okBtn.Click += (s, e) => { result = MessageBoxResult.OK; messageWindow.Close(); };
+                    buttonPanel.Children.Add(okBtn);
+                    break;
+
+                case MessageBoxButton.OKCancel:
+                    var cancelBtn1 = CreateMessageBoxButton("取消", false);
+                    var okBtn1 = CreateMessageBoxButton("确定", true);
+                    cancelBtn1.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+                    okBtn1.Click += (s, e) => { result = MessageBoxResult.OK; messageWindow.Close(); };
+                    buttonPanel.Children.Add(cancelBtn1);
+                    buttonPanel.Children.Add(okBtn1);
+                    break;
+
+                case MessageBoxButton.YesNo:
+                    var noBtn = CreateMessageBoxButton("否", false);
+                    var yesBtn = CreateMessageBoxButton("是", true);
+                    noBtn.Click += (s, e) => { result = MessageBoxResult.No; messageWindow.Close(); };
+                    yesBtn.Click += (s, e) => { result = MessageBoxResult.Yes; messageWindow.Close(); };
+                    buttonPanel.Children.Add(noBtn);
+                    buttonPanel.Children.Add(yesBtn);
+                    break;
+
+                case MessageBoxButton.YesNoCancel:
+                    var cancelBtn2 = CreateMessageBoxButton("取消", false);
+                    var noBtn2 = CreateMessageBoxButton("否", false);
+                    var yesBtn2 = CreateMessageBoxButton("是", true);
+                    cancelBtn2.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+                    noBtn2.Click += (s, e) => { result = MessageBoxResult.No; messageWindow.Close(); };
+                    yesBtn2.Click += (s, e) => { result = MessageBoxResult.Yes; messageWindow.Close(); };
+                    buttonPanel.Children.Add(cancelBtn2);
+                    buttonPanel.Children.Add(noBtn2);
+                    buttonPanel.Children.Add(yesBtn2);
+                    break;
+            }
+
+            Grid.SetRow(buttonPanel, 2);
+
+            // 关闭按钮事件
+            closeButton.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+
+            // 添加键盘支持
+            messageWindow.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    result = MessageBoxResult.Cancel;
+                    messageWindow.Close();
+                }
+                else if (e.Key == Key.Enter && buttons == MessageBoxButton.OK)
+                {
+                    result = MessageBoxResult.OK;
+                    messageWindow.Close();
+                }
+            };
+
+            mainGrid.Children.Add(titleBar);
+            mainGrid.Children.Add(contentGrid);
+            mainGrid.Children.Add(buttonPanel);
+
+            messageWindow.Content = mainGrid;
+            messageWindow.ShowDialog();
+
+            return result;
+        }
+
+        private Button CreateMessageBoxButton(string text, bool isPrimary)
+        {
+            var button = new Button
+            {
+                Content = text,
+                Width = 80,
+                Height = 32,
+                Margin = new Thickness(10, 0, 0, 0),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                FontSize = 13
+            };
+
+            if (isPrimary)
+            {
+                button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                button.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E2A3A"));
+                button.FontWeight = FontWeights.Bold;
+            }
+            else
+            {
+                button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+                button.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9"));
+            }
+
+            // 添加鼠标悬停效果
+            button.MouseEnter += (s, e) =>
+            {
+                if (isPrimary)
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                }
+                else
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6B7280"));
+                }
+            };
+
+            button.MouseLeave += (s, e) =>
+            {
+                if (isPrimary)
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                }
+                else
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+                }
+            };
+
+            return button;
+        }
+
+        // === 拖拽事件处理 ===
         private void MainWindow_DragEnter(object sender, DragEventArgs e)
         {
             // 检查拖拽数据是否包含文件
@@ -1596,7 +1847,7 @@ namespace UEModManager
             {
                 if (selectedMod != null)
                 {
-                    var result = MessageBox.Show($"确定要删除MOD \"{selectedMod.Name}\" 吗？\n这将同时删除备份文件和MOD目录中的文件。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var result = ShowCustomMessageBox($"确定要删除MOD \"{selectedMod.Name}\" 吗？\n这将同时删除备份文件和MOD目录中的文件。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (result == MessageBoxResult.Yes)
                     {
                         try
@@ -1630,18 +1881,18 @@ namespace UEModManager
                             selectedMod = null;
                             ClearModDetails();
                             
-                            MessageBox.Show("已删除MOD", "删除成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                            ShowCustomMessageBox("已删除MOD", "删除成功", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
                         catch (Exception deleteEx)
                         {
-                            MessageBox.Show($"删除MOD文件时发生错误: {deleteEx.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                            ShowCustomMessageBox($"删除MOD文件时发生错误: {deleteEx.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"删除MOD失败: {ex.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"删除MOD失败: {ex.Message}", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1773,25 +2024,235 @@ namespace UEModManager
             try
             {
                 var button = sender as Button;
-                var mod = button?.DataContext as Mod;
+                var mod = button?.Tag as Mod ?? button?.DataContext as Mod;
                 if (mod != null)
                 {
-                    var newDescription = ShowInputDialog("请输入MOD描述:", "编辑MOD", mod.Description);
-                    if (!string.IsNullOrWhiteSpace(newDescription) && newDescription != mod.Description)
-                    {
-                        mod.Description = newDescription;
-                        if (selectedMod == mod)
-                        {
-                            UpdateModDetails(mod);
-                        }
-                        RefreshModDisplay();
-                        MessageBox.Show($"已更新MOD描述", "编辑成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                    }
+                    ShowModEditDialog(mod);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"编辑MOD失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"编辑MOD失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 显示MOD编辑对话框
+        private void ShowModEditDialog(Mod mod)
+        {
+            try
+            {
+                var dialog = new Window
+                {
+                    Title = "编辑MOD",
+                    Width = 500,
+                    Height = 400,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0B1426")),
+                    WindowStyle = WindowStyle.None,
+                    AllowsTransparency = true,
+                    ResizeMode = ResizeMode.NoResize
+                };
+
+                var mainBorder = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0B1426")),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8)
+                };
+
+                var grid = new Grid();
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50) }); // 标题栏
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 名称输入
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 描述输入
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(60) }); // 按钮区域
+
+                // 标题栏
+                var titleBar = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
+                    CornerRadius = new CornerRadius(8, 8, 0, 0)
+                };
+                Grid.SetRow(titleBar, 0);
+
+                var titleGrid = new Grid();
+                var titleText = new TextBlock
+                {
+                    Text = "编辑MOD",
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    FontSize = 16,
+                    FontWeight = FontWeights.Bold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(20, 0, 0, 0)
+                };
+
+                var closeButton = new Button
+                {
+                    Content = "✕",
+                    Width = 30,
+                    Height = 30,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9CA3AF")),
+                    FontSize = 14,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    Cursor = Cursors.Hand
+                };
+                closeButton.Click += (s, e) => dialog.Close();
+
+                titleGrid.Children.Add(titleText);
+                titleGrid.Children.Add(closeButton);
+                titleBar.Child = titleGrid;
+
+                // 名称输入区域
+                var namePanel = new StackPanel
+                {
+                    Margin = new Thickness(20, 20, 20, 10)
+                };
+                Grid.SetRow(namePanel, 1);
+
+                var nameLabel = new TextBlock
+                {
+                    Text = "MOD名称:",
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    FontSize = 14,
+                    Margin = new Thickness(0, 0, 0, 5)
+                };
+
+                var nameTextBox = new TextBox
+                {
+                    Text = mod.Name,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2433")),
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(10),
+                    FontSize = 14,
+                    Height = 35
+                };
+
+                namePanel.Children.Add(nameLabel);
+                namePanel.Children.Add(nameTextBox);
+
+                // 描述输入区域
+                var descPanel = new StackPanel
+                {
+                    Margin = new Thickness(20, 10, 20, 20)
+                };
+                Grid.SetRow(descPanel, 2);
+
+                var descLabel = new TextBlock
+                {
+                    Text = "MOD描述:",
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    FontSize = 14,
+                    Margin = new Thickness(0, 0, 0, 5)
+                };
+
+                var descTextBox = new TextBox
+                {
+                    Text = mod.Description,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2433")),
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(10),
+                    FontSize = 14,
+                    TextWrapping = TextWrapping.Wrap,
+                    AcceptsReturn = true,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                };
+
+                descPanel.Children.Add(descLabel);
+                descPanel.Children.Add(descTextBox);
+
+                // 按钮区域
+                var buttonPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(20)
+                };
+                Grid.SetRow(buttonPanel, 3);
+
+                var cancelButton = CreateMessageBoxButton("取消", false);
+                cancelButton.Click += (s, e) => dialog.Close();
+                cancelButton.Margin = new Thickness(0, 0, 10, 0);
+
+                var saveButton = CreateMessageBoxButton("保存", true);
+                saveButton.Click += (s, e) =>
+                {
+                    try
+                    {
+                        var newName = nameTextBox.Text.Trim();
+                        var newDesc = descTextBox.Text.Trim();
+
+                        if (string.IsNullOrEmpty(newName))
+                        {
+                            ShowCustomMessageBox("MOD名称不能为空", "输入错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+
+                        bool hasChanges = false;
+                        if (newName != mod.Name)
+                        {
+                            mod.Name = newName;
+                            hasChanges = true;
+                        }
+
+                        if (newDesc != mod.Description)
+                        {
+                            mod.Description = newDesc;
+                            hasChanges = true;
+                        }
+
+                        if (hasChanges)
+                        {
+                            if (selectedMod == mod)
+                            {
+                                UpdateModDetails(mod);
+                            }
+                            RefreshModDisplay();
+                            ShowCustomMessageBox("MOD信息已更新", "编辑成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+
+                        dialog.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowCustomMessageBox($"保存失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+
+                buttonPanel.Children.Add(cancelButton);
+                buttonPanel.Children.Add(saveButton);
+
+                grid.Children.Add(titleBar);
+                grid.Children.Add(namePanel);
+                grid.Children.Add(descPanel);
+                grid.Children.Add(buttonPanel);
+
+                mainBorder.Child = grid;
+                dialog.Content = mainBorder;
+
+                // 支持ESC关闭
+                dialog.KeyDown += (s, e) =>
+                {
+                    if (e.Key == Key.Escape)
+                    {
+                        dialog.Close();
+                    }
+                };
+
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"打开编辑对话框失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2087,7 +2548,7 @@ namespace UEModManager
             catch (Exception ex)
             {
                 Console.WriteLine($"移动到分类失败: {ex.Message}");
-                MessageBox.Show($"移动到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"移动到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         
@@ -2171,8 +2632,7 @@ namespace UEModManager
 
         private void DeleteSpecificMod(Mod mod)
         {
-            var result = MessageBox.Show($"确定要删除MOD '{mod.Name}' 吗？\n\n这将同时删除MOD文件夹和备份文件夹中的相关文件。", 
-                "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var result = ShowCustomMessageBox($"确定要删除MOD '{mod.Name}' 吗？\n\n这将同时删除MOD文件夹和备份文件夹中的相关文件。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             
             if (result == MessageBoxResult.Yes)
             {
@@ -2210,11 +2670,11 @@ namespace UEModManager
                         ClearModDetails();
                     }
                     
-                    MessageBox.Show("MOD删除成功", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowCustomMessageBox("MOD删除成功", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"删除MOD失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ShowCustomMessageBox($"删除MOD失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -2473,14 +2933,14 @@ namespace UEModManager
                     });
                 });
                 
-                MessageBox.Show("预览图设置成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowCustomMessageBox("预览图设置成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 Console.WriteLine($"[DEBUG] MOD {mod.Name} 预览图设置完成，路径: {previewImagePath}");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] 设置预览图失败: {ex.Message}");
                 Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
-                MessageBox.Show($"设置预览图失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"设置预览图失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         
@@ -2548,11 +3008,11 @@ namespace UEModManager
                             $"💾 备份目录: {currentBackupPath}\n\n" +
                             $"💡 提示：定期备份您的存档和MOD文件！";
                 
-                MessageBox.Show(message, "系统状态", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowCustomMessageBox(message, "系统状态", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"获取系统状态失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"获取系统状态失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2565,12 +3025,12 @@ namespace UEModManager
                 {
                     // 保存设置并重新加载
                     SaveConfiguration(currentExecutableName);
-                    MessageBox.Show("设置已保存！", "设置", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowCustomMessageBox("设置已保存！", "设置", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"打开设置失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowCustomMessageBox($"打开设置失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2583,7 +3043,7 @@ namespace UEModManager
                                 $"💾 备份路径: {currentBackupPath}\n\n" +
                                 $"是否要重新配置游戏路径？";
             
-            var result = MessageBox.Show(currentSettings, "设置 - 虚幻引擎MOD管理器", 
+            var result = ShowCustomMessageBox(currentSettings, "设置 - 虚幻引擎MOD管理器", 
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             
             if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(currentGameName))
@@ -2621,6 +3081,37 @@ namespace UEModManager
             catch (Exception ex)
             {
                 Console.WriteLine($"切换MOD状态失败: {ex.Message}");
+            }
+        }
+
+        // MOD卡片滑块开关点击事件
+        private void ModToggle_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                var border = sender as Border;
+                var mod = border?.Tag as Mod;
+                if (mod != null)
+                {
+                    bool isCurrentlyEnabled = mod.Status == "已启用";
+                    
+                    if (isCurrentlyEnabled)
+                    {
+                        DisableMod(mod);
+                    }
+                    else
+                    {
+                        EnableMod(mod);
+                    }
+                    
+                    RefreshModDisplay();
+                    UpdateCategoryCount();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"切换MOD状态失败: {ex.Message}");
+                ShowCustomMessageBox($"切换MOD状态失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -4043,6 +4534,102 @@ namespace UEModManager
             {
                 Console.WriteLine($"[ERROR] 移动MOD到分类失败: {ex.Message}");
                 MessageBox.Show($"移动MOD到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 右键菜单打开时动态生成分类子菜单
+        private void ModContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is ContextMenu contextMenu)
+                {
+                    // 找到移动到分类的菜单项
+                    var moveToCategoryMenuItem = contextMenu.Items.OfType<MenuItem>()
+                        .FirstOrDefault(m => m.Name == "MoveToCategoryMenuItem");
+                    
+                    if (moveToCategoryMenuItem != null && _categoryService != null)
+                    {
+                        // 清空现有的子菜单
+                        moveToCategoryMenuItem.Items.Clear();
+                        
+                        // 获取当前MOD
+                        var mod = GetModFromContextMenu(moveToCategoryMenuItem);
+                        if (mod == null) return;
+                        
+                        // 获取自定义分类列表
+                        var categories = _categoryService.Categories
+                            .Where(c => !new[] { "全部", "已启用", "已禁用" }.Contains(c.Name))
+                            .ToList();
+                        
+                        if (categories.Any())
+                        {
+                            foreach (var category in categories)
+                            {
+                                var categoryMenuItem = new MenuItem
+                                {
+                                    Header = category.Name,
+                                    Style = (Style)FindResource("DarkMenuItem"),
+                                    Tag = mod // 将MOD信息附加到Tag中
+                                };
+                                
+                                // 添加图标
+                                var icon = new TextBlock
+                                {
+                                    Text = "📂",
+                                    FontSize = 12,
+                                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9CA3AF"))
+                                };
+                                categoryMenuItem.Icon = icon;
+                                
+                                // 添加点击事件
+                                categoryMenuItem.Click += (s, args) => MoveToCategorySubMenuItem_Click(s, args, category.Name);
+                                
+                                moveToCategoryMenuItem.Items.Add(categoryMenuItem);
+                            }
+                        }
+                        else
+                        {
+                            // 没有分类时显示提示
+                            var noCategories = new MenuItem
+                            {
+                                Header = "暂无可用分类",
+                                Style = (Style)FindResource("DarkMenuItem"),
+                                IsEnabled = false
+                            };
+                            moveToCategoryMenuItem.Items.Add(noCategories);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"生成分类子菜单失败: {ex.Message}");
+            }
+        }
+        
+        // 分类子菜单点击事件
+        private void MoveToCategorySubMenuItem_Click(object sender, RoutedEventArgs e, string categoryName)
+        {
+            try
+            {
+                if (sender is MenuItem menuItem && menuItem.Tag is Mod mod)
+                {
+                    // 更新MOD的分类
+                    mod.Categories = new List<string> { categoryName };
+                    
+                    // 刷新分类显示以更新数量
+                    RefreshCategoryDisplay();
+                    
+                    Console.WriteLine($"[DEBUG] MOD {mod.Name} 已移动到分类: {categoryName}");
+                    ShowCustomMessageBox($"MOD '{mod.Name}' 已移动到分类 '{categoryName}'", "移动成功", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"移动到分类失败: {ex.Message}");
+                ShowCustomMessageBox($"移动到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

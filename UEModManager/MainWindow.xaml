@@ -52,8 +52,8 @@
                                 <Setter TargetName="Border" Property="Background" Value="#1A2433"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#FBBF24"/>
-                                <Setter TargetName="CategoryName" Property="Foreground" Value="#1E2A3A"/>
+                                <Setter TargetName="Border" Property="Background" Value="#80FBBF24"/>
+                                <Setter TargetName="CategoryName" Property="Foreground" Value="#F1F5F9"/>
                             </Trigger>
 
                         </ControlTemplate.Triggers>
@@ -72,7 +72,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" CornerRadius="20" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="true">
+                        <Border x:Name="border" CornerRadius="8" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="true">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
                                     <GradientStop Color="#00D4AA" Offset="0"/>
@@ -289,6 +289,263 @@
             </Setter>
         </Style>
 
+        <!-- 深色主题滚动条样式 -->
+        <Style x:Key="DarkScrollBarThumb" TargetType="Thumb">
+            <Setter Property="Background" Value="#4A5568"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#6B7280"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter Property="Background" Value="#9CA3AF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DarkScrollBarButton" TargetType="RepeatButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Path x:Name="ArrowPath" Fill="#6B7280" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#374151"/>
+                                <Setter TargetName="ArrowPath" Property="Fill" Value="#9CA3AF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#4B5563"/>
+                                <Setter TargetName="ArrowPath" Property="Fill" Value="#F1F5F9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DarkScrollBar" TargetType="ScrollBar">
+            <Setter Property="Background" Value="#1A2433"/>
+            <Setter Property="BorderBrush" Value="#2A3441"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="MinWidth" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="12"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="12"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- 向上按钮 -->
+                            <RepeatButton Grid.Row="0" Style="{StaticResource DarkScrollBarButton}" 
+                                          Command="ScrollBar.LineUpCommand">
+                                <Path Data="M 0 4 L 4 0 L 8 4 Z" Fill="#6B7280" Width="6" Height="3"/>
+                            </RepeatButton>
+                            
+                            <!-- 滚动轨道 -->
+                            <Track Grid.Row="1" x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource DarkScrollBarButton}" 
+                                                  Command="ScrollBar.PageUpCommand"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource DarkScrollBarButton}" 
+                                                  Command="ScrollBar.PageDownCommand"/>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource DarkScrollBarThumb}"/>
+                                </Track.Thumb>
+                            </Track>
+                            
+                            <!-- 向下按钮 -->
+                            <RepeatButton Grid.Row="2" Style="{StaticResource DarkScrollBarButton}" 
+                                          Command="ScrollBar.LineDownCommand">
+                                <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="#6B7280" Width="6" Height="3"/>
+                            </RepeatButton>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter Property="Height" Value="12"/>
+                                <Setter Property="MinHeight" Value="12"/>
+                                <Setter Property="Width" Value="Auto"/>
+                                <Setter Property="MinWidth" Value="0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 深色主题ScrollViewer样式 -->
+        <Style x:Key="DarkScrollViewer" TargetType="ScrollViewer">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <ScrollContentPresenter Grid.Column="0" Grid.Row="0" 
+                                                    Content="{TemplateBinding Content}"
+                                                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                    CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                            
+                            <ScrollBar Grid.Column="1" Grid.Row="0" x:Name="PART_VerticalScrollBar"
+                                       Style="{StaticResource DarkScrollBar}"
+                                       Value="{TemplateBinding VerticalOffset}"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                            
+                            <ScrollBar Grid.Column="0" Grid.Row="1" x:Name="PART_HorizontalScrollBar"
+                                       Style="{StaticResource DarkScrollBar}"
+                                       Orientation="Horizontal"
+                                       Value="{TemplateBinding HorizontalOffset}"
+                                       Maximum="{TemplateBinding ScrollableWidth}"
+                                       ViewportSize="{TemplateBinding ViewportWidth}"
+                                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A区功能按钮样式 -->
+        <Style x:Key="HeaderFunctionButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Foreground" Value="#6B7280"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FBBF24"/>
+                                <Setter Property="Foreground" Value="#1E2A3A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F59E0B"/>
+                                <Setter Property="Foreground" Value="#1E2A3A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 深色ContextMenu样式 -->
+        <Style x:Key="DarkContextMenu" TargetType="ContextMenu">
+            <Setter Property="Background" Value="#1A2332"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="BorderBrush" Value="#2A3441"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 深色MenuItem样式 -->
+        <Style x:Key="DarkMenuItem" TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#F1F5F9"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <ContentPresenter Grid.Column="0" x:Name="Icon" 
+                                                  Content="{TemplateBinding Icon}"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center"/>
+                                
+                                <ContentPresenter Grid.Column="1" x:Name="HeaderHost"
+                                                  Content="{TemplateBinding Header}"
+                                                  VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2A3441"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#374151"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 深色Separator样式 -->
+        <Style x:Key="DarkSeparator" TargetType="Separator">
+            <Setter Property="Background" Value="#2A3441"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="8,4"/>
+        </Style>
+
     </Window.Resources>
     
     <Grid>
@@ -456,12 +713,12 @@
                     
                     <!-- 功能按钮组 -->
                     <StackPanel Orientation="Horizontal">
-                        <Button Background="Transparent" BorderThickness="0" Padding="8,6" Content="🔄" 
-                                Click="RefreshButton_Click" ToolTip="刷新数据" Foreground="#6B7280"/>
-                        <Button Background="Transparent" BorderThickness="0" Padding="8,6" Content="🔔" 
-                                Click="NotificationButton_Click" ToolTip="通知设置" Foreground="#6B7280"/>
-                        <Button Background="Transparent" BorderThickness="0" Padding="8,6" Content="⚙️" 
-                                Click="SettingsButton_Click" ToolTip="设置" Foreground="#6B7280"/>
+                        <Button Content="🔄" Style="{StaticResource HeaderFunctionButton}"
+                                Click="RefreshButton_Click" ToolTip="刷新数据"/>
+                        <Button Content="🔔" Style="{StaticResource HeaderFunctionButton}"
+                                Click="NotificationButton_Click" ToolTip="通知设置"/>
+                        <Button Content="⚙️" Style="{StaticResource HeaderFunctionButton}"
+                                Click="SettingsButton_Click" ToolTip="设置"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -540,17 +797,29 @@
                 </Border>
                 
                 <!-- 分类列表容器 -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Style="{StaticResource DarkScrollViewer}">
                     <StackPanel Margin="15,0,15,20">
                         <!-- 分类列表 -->
                         <ListBox x:Name="CategoryList" Background="Transparent" BorderThickness="0" 
                                  ItemContainerStyle="{StaticResource CategoryItemStyle}">
                             <ListBox.ContextMenu>
-                                <ContextMenu Background="#2A3441" Foreground="White">
-                                    <MenuItem Header="新增子分类" Click="AddSubCategoryMenuItem_Click"/>
-                                    <Separator/>
-                                    <MenuItem Header="重命名" Click="RenameCategoryMenuItem_Click"/>
-                                    <MenuItem Header="删除" Click="DeleteCategoryMenuItem_Click"/>
+                                <ContextMenu Style="{StaticResource DarkContextMenu}">
+                                    <MenuItem Header="新增子分类" Click="AddSubCategoryMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="➕" FontSize="12" Foreground="#10B981"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator Style="{StaticResource DarkSeparator}"/>
+                                    <MenuItem Header="重命名" Click="RenameCategoryMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="✏️" FontSize="12" Foreground="#6B7280"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="删除" Click="DeleteCategoryMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="🗑️" FontSize="12" Foreground="#DC2626"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
                                 </ContextMenu>
                             </ListBox.ContextMenu>
                         </ListBox>
@@ -560,7 +829,7 @@
         </Border>
         
         <!-- 主内容区 -->
-        <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto" Background="#0B1426">
+        <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto" Background="#0B1426" Style="{StaticResource DarkScrollViewer}">
             <StackPanel Margin="20">
                 <Grid Margin="0,0,0,20">
                     <!-- 动态显示当前MOD数量 -->
@@ -586,20 +855,46 @@
                                     MouseDown="ModCard_MouseDown" Cursor="Hand">
                                 <!-- 添加右键菜单 -->
                                 <Border.ContextMenu>
-                                    <ContextMenu Background="#2A3441" Foreground="White">
-                                        <MenuItem x:Name="EnableModMenuItem" Header="启用MOD" Click="EnableModMenuItem_Click"/>
-                                        <MenuItem x:Name="DisableModMenuItem" Header="禁用MOD" Click="DisableModMenuItem_Click"/>
-                                        <Separator/>
-                                        <MenuItem Header="移动到分类" x:Name="MoveToCategoryMenuItem" Click="MoveToCategoryMenuItem_Click">
+                                    <ContextMenu Style="{StaticResource DarkContextMenu}" Opened="ModContextMenu_Opened">
+                                        <MenuItem x:Name="EnableModMenuItem" Header="启用MOD" Click="EnableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
                                             <MenuItem.Icon>
-                                                <TextBlock Text="📁" FontSize="12"/>
+                                                <TextBlock Text="✅" FontSize="12" Foreground="#10B981"/>
                                             </MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator/>
-                                        <MenuItem Header="重命名" Click="RenameModMenuItem_Click"/>
-                                        <MenuItem Header="修改预览图" Click="ChangePreviewMenuItem_Click"/>
-                                        <Separator/>
-                                        <MenuItem Header="删除MOD" Click="DeleteModMenuItem_Click"/>
+                                        <MenuItem x:Name="DisableModMenuItem" Header="禁用MOD" Click="DisableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="⏸️" FontSize="12" Foreground="#DC2626"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{StaticResource DarkSeparator}"/>
+                                        <MenuItem Header="移动到分类" x:Name="MoveToCategoryMenuItem" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="📁" FontSize="12" Foreground="#FBBF24"/>
+                                            </MenuItem.Icon>
+                                            <!-- 动态子菜单将在代码中生成 -->
+                                        </MenuItem>
+                                        <Separator Style="{StaticResource DarkSeparator}"/>
+                                        <MenuItem Header="改名" Click="RenameModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="✏️" FontSize="12" Foreground="#6B7280"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="重命名" Click="RenameModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="📝" FontSize="12" Foreground="#6B7280"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="修改预览图" Click="ChangePreviewMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="🖼️" FontSize="12" Foreground="#6B7280"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{StaticResource DarkSeparator}"/>
+                                        <MenuItem Header="删除MOD" Click="DeleteModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="🗑️" FontSize="12" Foreground="#DC2626"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
                                     </ContextMenu>
                                 </Border.ContextMenu>
                                 <Border.Style>
@@ -690,13 +985,43 @@
                                             </Border>
                                             
                                             <!-- 操作按钮 -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <Button Content="👁" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
-                                                        Padding="4" FontSize="14" ToolTip="切换状态" Tag="{Binding}" Click="ToggleModStatus"/>
-                                                <Button Content="⚙" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
-                                                        Padding="4" FontSize="14" ToolTip="编辑MOD" Tag="{Binding}" Click="EditModButton_Click"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <!-- 滑块开关 -->
+                                                <Border x:Name="ModToggle" Background="#4A5568" CornerRadius="8" 
+                                                       Height="16" Width="30" VerticalAlignment="Center" Cursor="Hand" 
+                                                       MouseDown="ModToggle_MouseDown" Tag="{Binding}" ToolTip="切换启用/禁用" Margin="0,0,4,0">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#4A5568"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                                    <Setter Property="Background" Value="#10B981"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Border x:Name="ToggleThumb" Background="White" CornerRadius="6" 
+                                                           Height="12" Width="12" VerticalAlignment="Center" Margin="2,0,0,0">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                    </Border>
+                                                </Border>
+                                                
+                                                <!-- 编辑按钮 - 铅笔图标 -->
+                                                <Button Content="✏️" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
+                                                        Padding="4" FontSize="12" ToolTip="编辑MOD" Tag="{Binding}" Click="EditModButton_Click" Margin="0,0,2,0"/>
+                                                
+                                                <!-- 删除按钮 -->
                                                 <Button Content="🗑" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
-                                                        Padding="4" FontSize="14" ToolTip="删除MOD" Tag="{Binding}" Click="DeleteModButton_Click"/>
+                                                        Padding="4" FontSize="12" ToolTip="删除MOD" Tag="{Binding}" Click="DeleteModButton_Click"/>
                                             </StackPanel>
                                         </Grid>
                                     </StackPanel>
@@ -710,7 +1035,7 @@
         
         <!-- 右侧面板 -->
         <Border Grid.Row="1" Grid.Column="2" Background="#0F1B2E" BorderBrush="#1A2332" BorderThickness="1,0,0,0">
-            <ScrollViewer>
+            <ScrollViewer Style="{StaticResource DarkScrollViewer}">
                 <StackPanel Margin="20">
                     <Border Margin="0,0,0,20" BorderBrush="#1A2332" BorderThickness="0,0,0,1" Padding="0,0,0,15">
                         <Grid>
