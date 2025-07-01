@@ -891,7 +891,8 @@
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ScrollViewer.CanContentScroll="False"
-                                 ScrollViewer.PanningMode="VerticalOnly">
+                                 ScrollViewer.PanningMode="VerticalOnly"
+                                 PreviewMouseWheel="CategoryList_PreviewMouseWheel">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid>

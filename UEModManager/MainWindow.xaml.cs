@@ -60,46 +60,34 @@ namespace UEModManager
         // 主构造函数
         public MainWindow()
         {
-            try
-            {
-                // 分配控制台窗口以便调试（仅在Debug模式下）
-                #if DEBUG
-                AllocConsole(); // 启用控制台窗口
-                Console.WriteLine("=== UEModManager Debug Console ===");
-                Console.WriteLine($"程序启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                #endif
+            AllocConsole(); // 启用控制台日志输出
+            InitializeComponent();
+            
+            // 启用拖拽功能
+            AllowDrop = true;
+            DragEnter += MainWindow_DragEnter;
+            DragOver += MainWindow_DragOver;
+            Drop += MainWindow_Drop;
 
-                InitializeComponent();
-                
-                // 启用拖拽功能
-                AllowDrop = true;
-                DragEnter += MainWindow_DragEnter;
-                DragOver += MainWindow_DragOver;
-                Drop += MainWindow_Drop;
+            // 立即加载配置，不延迟
+            LoadConfiguration();
+            InitializeData();
+            SetupEventHandlers();
+            
+            // 改为窗口加载完成后立即同步检查配置
+            this.Loaded += (s, e) => {
+                CheckAndRestoreGameConfiguration();
+            };
+            
+            // 添加关闭事件处理，保存分类数据
+            this.Closing += MainWindow_Closing;
+            
+            StartStatsTimer();
 
-                // 立即加载配置，不延迟
-                LoadConfiguration();
-                InitializeData();
-                SetupEventHandlers();
-                
-                // 改为窗口加载完成后立即同步检查配置
-                this.Loaded += (s, e) => {
-                    CheckAndRestoreGameConfiguration();
-                };
-                
-                // 添加关闭事件处理，保存分类数据
-                this.Closing += MainWindow_Closing;
-                
-                StartStatsTimer();
-                
-                // Console.WriteLine("MainWindow 初始化完成");
-            }
-            catch (Exception ex)
-            {
-                // Console.WriteLine($"主窗口初始化失败: {ex.Message}");
-                ShowCustomMessageBox($"主窗口初始化失败: {ex.Message}", "初始化错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                throw;
-            }
+            // 分类列表初始化绑定
+            CategoryList.ItemsSource = categories;
+            
+            // Console.WriteLine("MainWindow 初始化完成");
         }
 
         // Win32 API 用于分配控制台窗口
@@ -2981,6 +2969,16 @@ namespace UEModManager
         {
             Console.WriteLine($"[DEBUG] CategoryArea_PreviewMouseDown triggered. Source: {e.OriginalSource.GetType().Name}");
             
+            // 新增：如果点击的是按钮或其子元素，不清除选中
+            if (e.OriginalSource is DependencyObject depObj)
+            {
+                var parentButton = FindParent<Button>(depObj);
+                if (parentButton != null)
+                {
+                    Console.WriteLine("[DEBUG] Click was on a Button, skip clearing selection.");
+                    return;
+                }
+            }
             // 检查是否点击在分类列表项上
             var source = e.OriginalSource as DependencyObject;
             bool isOnCategoryItem = false;
@@ -5472,26 +5470,46 @@ namespace UEModManager
             {
                 var selectedCategoryName = (CategoryList.SelectedItem as Category)?.Name;
 
-                // Create a temporary list with the "All" category
+                // 新建分类后，优先显示所有自定义分类（包括没有MOD的）
                 var newCategories = new List<Category>
                 {
                     new Category { Name = "全部", Count = allMods.Count }
                 };
 
-                // Group mods by their categories and count them
+                // 统计每个分类下的MOD数量
                 var categoryCounts = allMods
                     .Where(m => m.Categories != null)
                     .SelectMany(m => m.Categories)
                     .GroupBy(c => c)
                     .ToDictionary(g => g.Key, g => g.Count());
 
-                foreach (var kvp in categoryCounts.OrderBy(kvp => kvp.Key))
+                // 加入所有自定义分类（包括没有MOD的），排除"已启用/已禁用"
+                if (_categoryService != null && _categoryService.Categories != null)
                 {
-                    if (kvp.Key != "全部")
+                    foreach (var catItem in _categoryService.Categories)
                     {
-                        newCategories.Add(new Category { Name = kvp.Key, Count = kvp.Value });
+                        if (catItem.Name == "全部" || catItem.Name == "已启用" || catItem.Name == "已禁用") continue;
+                        int count = categoryCounts.ContainsKey(catItem.Name) ? categoryCounts[catItem.Name] : 0;
+                        newCategories.Add(new Category { Name = catItem.Name, Count = count });
                     }
                 }
+                else
+                {
+                    // 兼容旧逻辑，防止空指针
+                    foreach (var kvp in categoryCounts.OrderBy(kvp => kvp.Key))
+                    {
+                        if (kvp.Key != "全部" && kvp.Key != "已启用" && kvp.Key != "已禁用")
+                        {
+                            newCategories.Add(new Category { Name = kvp.Key, Count = kvp.Value });
+                        }
+                    }
+                }
+
+                // 去重（防止同名分类重复）
+                newCategories = newCategories
+                    .GroupBy(c => c.Name)
+                    .Select(g => g.First())
+                    .ToList();
 
                 // Update the ObservableCollection on the UI thread
                 Dispatcher.Invoke(() =>
@@ -5618,10 +5636,10 @@ namespace UEModManager
                 var result = ShowCustomMessageBox($"确定要删除分类 '{categoryName}' 吗？\n\n此操作将同时删除所有子分类。", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (result == MessageBoxResult.Yes)
                 {
-                    // 如果有CategoryItem对象，直接用；否则用名称查找
+                    // 如果有CategoryItem对象，直接用；否则用名称查找（排除已启用/已禁用）
                     if (selectedCategoryItem == null)
                     {
-                        selectedCategoryItem = _categoryService.Categories.FirstOrDefault(x => x.Name == categoryName);
+                        selectedCategoryItem = _categoryService.Categories.FirstOrDefault(x => x.Name == categoryName && x.Name != "已启用" && x.Name != "已禁用");
                     }
                     if (selectedCategoryItem != null)
                     {
@@ -5640,62 +5658,6 @@ namespace UEModManager
             {
                 Console.WriteLine($"[ERROR] 删除分类失败: {ex.Message}");
                 ShowCustomMessageBox($"删除分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        // 重命名分类按钮点击事件
-        private async void RenameCategoryButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // 优先使用CategoryService的分类
-                if (_categoryService != null && CategoryList.SelectedItem is CategoryItem selectedCategoryItem)
-                {
-                    // 检查是否是默认分类
-                    var defaultCategories = new[] { "全部", "已启用", "已禁用" };
-                    if (defaultCategories.Contains(selectedCategoryItem.Name))
-                    {
-                        MessageBox.Show("默认分类不能重命名", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                        return;
-                    }
-                    
-                    string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategoryItem.Name);
-                    if (!string.IsNullOrEmpty(newName) && newName != selectedCategoryItem.Name)
-                    {
-                        bool success = await _categoryService.RenameCategoryAsync(selectedCategoryItem, newName);
-                        if (success)
-                        {
-                            // 刷新分类显示
-                            RefreshCategoryDisplay();
-                            
-                            Console.WriteLine($"[DEBUG] 成功重命名分类: {selectedCategoryItem.Name} -> {newName}");
-                            MessageBox.Show("分类重命名成功！", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Information);
-                        }
-                        else
-                        {
-                            MessageBox.Show("重命名失败，分类名称可能已存在", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        }
-                    }
-                }
-                else if (CategoryList.SelectedItem is Category selectedCategory)
-                {
-                    // 回退到旧方式
-                    string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategory.Name);
-                    if (!string.IsNullOrEmpty(newName) && newName != selectedCategory.Name)
-                    {
-                        selectedCategory.Name = newName;
-                        RefreshCategoryDisplay();
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("请先选择要重命名的分类", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] 重命名分类失败: {ex.Message}");
-                MessageBox.Show($"重命名分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -6539,6 +6501,81 @@ namespace UEModManager
         }
 
         #endregion
+
+        // 让B1区分类列表支持鼠标滚轮滚动
+        private void CategoryList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            // 查找外层ScrollViewer
+            var scrollViewer = FindParent<ScrollViewer>(CategoryList);
+            if (scrollViewer != null)
+            {
+                if (e.Delta != 0)
+                {
+                    scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        // 重命名分类按钮点击事件
+        private async void RenameCategoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 优先使用CategoryService的分类
+                if (_categoryService != null && CategoryList.SelectedItem is CategoryItem selectedCategoryItem)
+                {
+                    // 检查是否是默认分类
+                    var defaultCategories = new[] { "全部", "已启用", "已禁用" };
+                    if (defaultCategories.Contains(selectedCategoryItem.Name))
+                    {
+                        MessageBox.Show("默认分类不能重命名", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                    string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategoryItem.Name);
+                    if (!string.IsNullOrEmpty(newName) && newName != selectedCategoryItem.Name)
+                    {
+                        bool success = await _categoryService.RenameCategoryAsync(selectedCategoryItem, newName);
+                        if (success)
+                        {
+                            // 刷新分类显示
+                            RefreshCategoryDisplay();
+                            Console.WriteLine($"[DEBUG] 成功重命名分类: {selectedCategoryItem.Name} -> {newName}");
+                            MessageBox.Show("分类重命名成功！", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                        else
+                        {
+                            MessageBox.Show("重命名失败，分类名称可能已存在", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                }
+                else if (CategoryList.SelectedItem is Category selectedCategory)
+                {
+                    // 回退到旧方式
+                    string newName = ShowInputDialog("请输入新的分类名称:", "重命名分类", selectedCategory.Name);
+                    if (!string.IsNullOrEmpty(newName) && newName != selectedCategory.Name)
+                    {
+                        selectedCategory.Name = newName;
+                        RefreshCategoryDisplay();
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("请先选择要重命名的分类", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 重命名分类失败: {ex.Message}");
+                MessageBox.Show($"重命名分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 新增：用于阻止按钮冒泡
+        private void OperationButton_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+        }
     }
 
     public class Game
