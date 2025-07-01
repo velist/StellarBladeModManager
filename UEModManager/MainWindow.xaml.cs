@@ -1371,8 +1371,8 @@ namespace UEModManager
             var inputWindow = new Window
             {
                 Title = title,
-                Width = 400,
-                Height = 200,
+                Width = 450,
+                Height = 220,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this,
                 ResizeMode = ResizeMode.NoResize,
@@ -1391,7 +1391,9 @@ namespace UEModManager
                 Foreground = Brushes.White,
                 Margin = new Thickness(20),
                 VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 14,
+                FontWeight = FontWeights.Medium
             };
             Grid.SetRow(promptLabel, 0);
 
@@ -1399,11 +1401,12 @@ namespace UEModManager
             {
                 Text = defaultValue,
                 Margin = new Thickness(20, 0, 20, 10),
-                Padding = new Thickness(8),
+                Padding = new Thickness(10),
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2433")),
                 Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
-                BorderThickness = new Thickness(1)
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA")),
+                BorderThickness = new Thickness(2),
+                FontSize = 14
             };
             Grid.SetRow(inputBox, 1);
 
@@ -1417,22 +1420,25 @@ namespace UEModManager
             var okButton = new Button
             {
                 Content = "确定",
-                Width = 80,
-                Height = 30,
+                Width = 90,
+                Height = 36,
                 Margin = new Thickness(0, 0, 10, 0),
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24")),
-                Foreground = Brushes.Black,
-                BorderThickness = new Thickness(0)
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA")),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                FontSize = 14,
+                FontWeight = FontWeights.Bold
             };
 
             var cancelButton = new Button
             {
                 Content = "取消",
-                Width = 80,
-                Height = 30,
+                Width = 90,
+                Height = 36,
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568")),
                 Foreground = Brushes.White,
-                BorderThickness = new Thickness(0)
+                BorderThickness = new Thickness(0),
+                FontSize = 14
             };
 
             string result = "";
@@ -5583,7 +5589,6 @@ namespace UEModManager
                         RefreshCategoryDisplay();
                         
                         Console.WriteLine($"[DEBUG] 成功添加分类: {newCategory.FullPath}");
-                        ShowCustomMessageBox($"分类 '{categoryName}' 添加成功！", "添加分类", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
@@ -5646,7 +5651,6 @@ namespace UEModManager
                         await _categoryService.RemoveCategoryAsync(selectedCategoryItem);
                         RefreshCategoryDisplay();
                         Console.WriteLine($"[DEBUG] 成功删除分类: {categoryName}");
-                        ShowCustomMessageBox("分类删除成功！", "删除分类", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
@@ -6173,6 +6177,18 @@ namespace UEModManager
                         stackPanel.Children.Add(placeholderText);
                     }
 
+                    var donationText = new TextBlock
+                    {
+                        Text = "如果对你有帮助，可以请我喝一杯蜜雪冰城",
+                        Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
+                        FontSize = 12,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap,
+                        TextAlignment = TextAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+                    stackPanel.Children.Add(donationText);
+
                     var hintText = new TextBlock
                     {
                         Text = isEnglishMode ? "Hover to view, click for more info" : "悬停查看，点击了解更多",
@@ -6349,7 +6365,6 @@ namespace UEModManager
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(20),
-                Cursor = Cursors.Hand,
                 Width = 180,
                 Height = 200
             };
@@ -6396,24 +6411,6 @@ namespace UEModManager
             stackPanel.Children.Add(titleText);
 
             border.Child = stackPanel;
-
-            // 鼠标事件
-            border.MouseEnter += (s, e) =>
-            {
-                border.Background = new SolidColorBrush(Color.FromRgb(42, 52, 65));
-            };
-            border.MouseLeave += (s, e) =>
-            {
-                border.Background = new SolidColorBrush(Color.FromRgb(26, 35, 50));
-            };
-            border.MouseDown += (s, e) =>
-            {
-                // 这里可以添加打开云盘链接的逻辑
-                var message = isEnglishMode ? 
-                    $"Opening {title}...\n(Feature will be available in future updates)" :
-                    $"正在打开{title}...\n(功能将在后续版本中开放)";
-                MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
-            };
 
             return border;
         }
@@ -6541,7 +6538,6 @@ namespace UEModManager
                             // 刷新分类显示
                             RefreshCategoryDisplay();
                             Console.WriteLine($"[DEBUG] 成功重命名分类: {selectedCategoryItem.Name} -> {newName}");
-                            MessageBox.Show("分类重命名成功！", "重命名分类", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
                         else
                         {

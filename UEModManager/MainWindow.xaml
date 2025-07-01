@@ -595,7 +595,7 @@
         </Grid.ColumnDefinitions>
         
         <!-- A区：顶部导航栏 -->
-        <Border Grid.ColumnSpan="3" Grid.Row="0" Background="#0F1B2E" BorderBrush="#1A2332" BorderThickness="0,0,0,1">
+        <Border Grid.ColumnSpan="3" Grid.Row="0" Background="#1A2332" BorderBrush="#2A3441" BorderThickness="0,0,0,1">
             <Grid Margin="20,10">
                 
                 <!-- 左侧：品牌和游戏选择器 -->
@@ -933,12 +933,6 @@
                             </ListBox.ItemTemplate>
                             <ListBox.ContextMenu>
                                 <ContextMenu Style="{StaticResource DarkContextMenu}">
-                                    <MenuItem Header="新增子分类" Click="AddSubCategoryMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                        <MenuItem.Icon>
-                                            <TextBlock Text="➕" FontSize="12" Foreground="#10B981"/>
-                                        </MenuItem.Icon>
-                                    </MenuItem>
-                                    <Separator Style="{StaticResource DarkSeparator}"/>
                                     <MenuItem Header="重命名" Click="RenameCategoryMenuItem_Click" Style="{StaticResource DarkMenuItem}">
                                         <MenuItem.Icon>
                                             <TextBlock Text="✏️" FontSize="12" Foreground="#6B7280"/>
