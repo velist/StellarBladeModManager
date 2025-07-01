@@ -727,6 +727,32 @@
                     </ComboBox>
                 </StackPanel>
                 
+                <!-- 中间：剑星专属功能按钮（仅剑星显示） -->
+                <StackPanel x:Name="StellarBladePanel" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                    <!-- 收集工具箱按钮 -->
+                    <Button x:Name="CollectionToolButton" Content="📋 收集工具箱" Style="{StaticResource SecondaryPillButton}" 
+                            ToolTip="剑星收集工具" Margin="0,0,15,0" Click="CollectionToolButton_Click">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="CollectionToolMenu" Style="{StaticResource DarkContextMenu}">
+                                <MenuItem Header="物品收集" Click="ItemCollectionMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="💎" FontSize="12" Foreground="#10B981"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="衣服收集" Click="ClothingCollectionMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="👗" FontSize="12" Foreground="#F59E0B"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                    
+                    <!-- 剑星MOD合集按钮 -->
+                    <Button x:Name="StellarModCollectionButton" Content="🗂️ 剑星MOD合集" Style="{StaticResource SecondaryPillButton}"
+                            ToolTip="访问剑星MOD云盘合集" Click="StellarModCollectionButton_Click"/>
+                </StackPanel>
+                
                 <!-- 右侧：搜索框和功能按钮 -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <!-- 搜索框 - 修改提示文字并添加点击清除功能 -->
@@ -751,8 +777,33 @@
                                 Click="RefreshButton_Click" ToolTip="刷新数据"/>
                         <Button Content="🔔" Style="{StaticResource HeaderFunctionButton}"
                                 Click="NotificationButton_Click" ToolTip="通知设置"/>
-                        <Button Content="⚙️" Style="{StaticResource HeaderFunctionButton}"
-                                Click="SettingsButton_Click" ToolTip="设置"/>
+                        <!-- 设置下拉菜单按钮 -->
+                        <Button Content="⚙️" Style="{StaticResource HeaderFunctionButton}" ToolTip="设置" Click="SettingsMenuButton_Click">
+                            <Button.ContextMenu>
+                                <ContextMenu x:Name="SettingsContextMenu" Style="{StaticResource DarkContextMenu}">
+                                    <MenuItem Header="路径设置" Click="PathSettingsMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="📁" FontSize="12" Foreground="#FBBF24"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="切换英文 (Language)" Click="LanguageMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="🌐" FontSize="12" Foreground="#10B981"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="关于爱酱MOD管理器" Click="AboutMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="ℹ️" FontSize="12" Foreground="#6B7280"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="检查更新" Click="UpdateMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="🔄" FontSize="12" Foreground="#3B82F6"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -1230,14 +1281,30 @@
         
         <!-- 底部状态栏 -->
         <Border Grid.Row="2" Grid.ColumnSpan="3" Background="#0F1B2E" BorderBrush="#1A2332" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="MOD目录: D:\steam\steamapps\common\StellarBlade\SB\Content\Paks\~mods" 
-                           Foreground="#94A3B8" FontSize="12" Margin="20,0" Width="400"/>
-                <TextBlock x:Name="SystemInfoText" Text="已加载MOD: 54/54 | 内存占用: 54.0GB" 
-                           Foreground="#94A3B8" FontSize="12" Margin="20,0"/>
-                <TextBlock Text="虚幻引擎MOD管理器 v1.9.0 (20250105) | 支持黑神话·悟空、剑星等UE游戏" 
-                           Foreground="#94A3B8" FontSize="12" HorizontalAlignment="Right" Margin="20,0"/>
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- MOD目录信息 -->
+                <TextBlock x:Name="ModDirectoryText" Grid.Column="0" Text="MOD目录: 未配置" 
+                           Foreground="#94A3B8" FontSize="12" Margin="20,0,10,0" VerticalAlignment="Center"/>
+                
+                <!-- 系统信息 -->
+                <TextBlock x:Name="SystemInfoText" Grid.Column="1" Text="已加载MOD: 0/0 | 内存占用: 0MB" 
+                           Foreground="#94A3B8" FontSize="12" Margin="10,0" VerticalAlignment="Center"/>
+                
+                <!-- 右侧功能区 -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0">
+                    <!-- 支持捐赠 -->
+                    <TextBlock Text="支持捐赠" Foreground="#10B981" FontSize="12" Cursor="Hand" 
+                               MouseEnter="DonationText_MouseEnter" MouseLeave="DonationText_MouseLeave"
+                               MouseDown="DonationText_MouseDown"/>
+                </StackPanel>
+            </Grid>
         </Border>
         
         <!-- 操作工具栏 (悬浮Bar) -->

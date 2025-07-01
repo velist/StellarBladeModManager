@@ -49,6 +49,9 @@ namespace UEModManager
         private string currentExecutableName = "";  // 添加执行程序名称字段
         private string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
         private readonly List<string> modTags = new List<string> { "面部", "人物", "武器", "修改", "其他" };
+        
+        // 语言支持字段
+        private bool isEnglishMode = false;
         // 添加CategoryService支持
         private CategoryService? _categoryService;
         private ModService? _modService;
@@ -175,6 +178,9 @@ namespace UEModManager
                     // 立即初始化MOD
                     InitializeModsForGame();
                     
+                    // 更新剑星专属功能显示
+                    UpdateStellarBladeFeatures();
+                    
                     Console.WriteLine($"游戏配置恢复完成，共加载 {allMods.Count} 个MOD");
                 }
                 else
@@ -285,6 +291,12 @@ namespace UEModManager
             // 清空详情面板
             ClearModDetails();
             
+            // 初始化剑星专属功能（默认隐藏）
+            if (StellarBladePanel != null)
+            {
+                StellarBladePanel.Visibility = Visibility.Collapsed;
+            }
+            
             Console.WriteLine("基础数据初始化完成，等待配置恢复...");
         }
 
@@ -376,6 +388,12 @@ namespace UEModManager
                     else
                     {
                         Console.WriteLine($"[DEBUG] 游戏选择未变化或选择了默认项，不执行切换操作");
+                        
+                        // 如果是选择了剑星，确保显示剑星专属功能
+                        if (gameName.Contains("剑星") || gameName.Contains("Stellar"))
+                        {
+                            UpdateStellarBladeFeatures();
+                        }
                     }
                 }
                 else
@@ -387,6 +405,38 @@ namespace UEModManager
             {
                 Console.WriteLine($"[ERROR] 游戏选择失败: {ex.Message}");
                 Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+            }
+        }
+        
+        // 更新剑星专属功能的显示状态
+        private void UpdateStellarBladeFeatures()
+        {
+            try
+            {
+                if (StellarBladePanel != null)
+                {
+                    // 只有选择剑星时才显示专属功能
+                    var selectedItem = GameList.SelectedItem as ComboBoxItem;
+                    var gameName = selectedItem?.Content.ToString() ?? "";
+                    
+                    if (gameName.Contains("剑星") || gameName.Contains("Stellar"))
+                    {
+                        StellarBladePanel.Visibility = Visibility.Visible;
+                        Console.WriteLine("[DEBUG] 显示剑星专属功能按钮");
+                    }
+                    else
+                    {
+                        StellarBladePanel.Visibility = Visibility.Collapsed;
+                        Console.WriteLine("[DEBUG] 隐藏剑星专属功能按钮");
+                    }
+                }
+                
+                // 更新按钮文本语言
+                UpdateStellarButtonLanguage();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新剑星专属功能失败: {ex.Message}");
             }
         }
 
@@ -411,6 +461,9 @@ namespace UEModManager
                 
                 SaveConfiguration(executableName);
                 UpdateGamePathDisplay();
+                
+                // 更新剑星专属功能显示
+                UpdateStellarBladeFeatures();
                 
                 // 显示扫描进度
                 this.IsEnabled = false;
@@ -1147,8 +1200,11 @@ namespace UEModManager
                 // 强制界面更新
                 ModsGrid.UpdateLayout();
                 
-                // 重新加载所有MOD的预览图
-                foreach (var mod in allMods)
+                // 获取过滤后的MOD列表
+                var filteredMods = GetFilteredMods();
+                
+                // 重新加载显示MOD的预览图
+                foreach (var mod in filteredMods)
                 {
                     if (!string.IsNullOrEmpty(mod.PreviewImagePath))
                     {
@@ -1156,19 +1212,79 @@ namespace UEModManager
                     }
                 }
                 
-                // 重新设置数据源
-                ModsGrid.ItemsSource = allMods;
+                // 重新设置数据源为过滤后的数据
+                ModsGrid.ItemsSource = filteredMods;
                 
                 // 强制重新绘制
                 ModsGrid.InvalidateVisual();
                 
                 UpdateModCountDisplay();
                 
-                Console.WriteLine($"MOD显示刷新完成，共显示 {allMods.Count} 个MOD");
+                Console.WriteLine($"MOD显示刷新完成，共显示 {filteredMods.Count} 个MOD");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"刷新MOD显示失败: {ex.Message}");
+            }
+        }
+
+        // 获取过滤后的MOD列表（搜索+分类过滤）
+        private List<Mod> GetFilteredMods()
+        {
+            try
+            {
+                var filteredMods = allMods.AsEnumerable();
+                
+                // 应用搜索过滤
+                var searchText = SearchBox?.Text?.Trim();
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    filteredMods = filteredMods.Where(mod => 
+                        (mod.Name?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                        (mod.RealName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                        (mod.Description?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false)
+                    );
+                    Console.WriteLine($"[DEBUG] 搜索关键词: '{searchText}'");
+                }
+                
+                // 应用分类过滤
+                var selectedItem = CategoryList?.SelectedItem;
+                if (selectedItem is Category category)
+                {
+                    switch (category.Name)
+                    {
+                        case "全部":
+                        case "All":
+                            // 显示所有MOD，无需过滤
+                            break;
+                        case "已启用":
+                        case "Enabled":
+                            filteredMods = filteredMods.Where(mod => mod.Status == "已启用" || mod.Status == "Enabled");
+                            break;
+                        case "已禁用":
+                        case "Disabled":
+                            filteredMods = filteredMods.Where(mod => mod.Status == "已禁用" || mod.Status == "Disabled");
+                            break;
+                        default:
+                            // 按类型过滤
+                            filteredMods = filteredMods.Where(mod => mod.Type == category.Name);
+                            break;
+                    }
+                }
+                else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
+                {
+                    // 按自定义分类过滤
+                    filteredMods = filteredMods.Where(mod => mod.Categories.Contains(categoryItem.Name));
+                }
+                
+                var result = filteredMods.ToList();
+                Console.WriteLine($"[DEBUG] 过滤后MOD数量: {result.Count}");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"过滤MOD列表失败: {ex.Message}");
+                return allMods;
             }
         }
 
@@ -2270,16 +2386,18 @@ namespace UEModManager
         // === 搜索框焦点事件 ===
         private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            SearchPlaceholder.Visibility = Visibility.Collapsed;
+            if (SearchPlaceholder != null)
+            {
+                SearchPlaceholder.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
             var searchBox = sender as TextBox;
-            var placeholder = FindName("SearchPlaceholder") as TextBlock;
-            if (searchBox != null && placeholder != null && string.IsNullOrWhiteSpace(searchBox.Text))
+            if (searchBox != null && SearchPlaceholder != null && string.IsNullOrWhiteSpace(searchBox.Text))
             {
-                placeholder.Visibility = Visibility.Visible;
+                SearchPlaceholder.Visibility = Visibility.Visible;
             }
         }
 
@@ -3219,6 +3337,25 @@ namespace UEModManager
             }
         }
 
+        // 设置菜单按钮点击事件
+        private void SettingsMenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var button = sender as Button;
+                if (button?.ContextMenu != null)
+                {
+                    button.ContextMenu.PlacementTarget = button;
+                    button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    button.ContextMenu.IsOpen = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"打开设置菜单失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private MessageBoxResult ShowSettingsDialog()
         {
             var currentSettings = $"当前设置：\n\n" +
@@ -3238,6 +3375,1015 @@ namespace UEModManager
             }
             
             return result;
+        }
+
+        // 新的设置菜单项事件处理器
+        private void PathSettingsMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(currentGameName))
+                {
+                    ShowGamePathDialog(currentGameName);
+                }
+                else
+                {
+                    ShowCustomMessageBox("请先选择一个游戏再配置路径。", "路径设置", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"打开路径设置失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LanguageMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                isEnglishMode = !isEnglishMode;
+                UpdateLanguage();
+                
+                string message = isEnglishMode ? 
+                    "Language switched to English successfully!" : 
+                    "语言已切换为中文！";
+                string title = isEnglishMode ? "Language Settings" : "语言设置";
+                
+                ShowCustomMessageBox(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"切换语言失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ShowAboutDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"打开关于对话框失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void UpdateMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                CheckForUpdates();
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"检查更新失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 语言切换功能实现 - 全局切换
+        private void UpdateLanguage()
+        {
+            try
+            {
+                if (isEnglishMode)
+                {
+                    // 切换到英文
+                    this.Title = "UE MOD Manager";
+                    
+                    // 更新主界面UI元素
+                    if (SelectAllCheckBox != null) SelectAllCheckBox.Content = "Select All";
+                    if (ImportModBtn != null) ImportModBtn.Content = "📥 Import MOD";
+                    if (ImportModBtn2 != null) ImportModBtn2.Content = "📥 Import MOD";
+                    if (LaunchGameBtn != null) LaunchGameBtn.Content = "▶️ Launch Game";
+                    
+                    // 更新游戏选择器中的选项
+                    UpdateGameSelectorLanguage();
+                    
+                    // 更新搜索框占位符
+                    UpdateSearchPlaceholder();
+                    
+                    // 更新过滤按钮
+                    if (EnabledFilterBtn != null) EnabledFilterBtn.Content = "Enabled";
+                    if (DisabledFilterBtn != null) DisabledFilterBtn.Content = "Disabled";
+                    
+                    // 更新操作按钮
+                    UpdateOperationButtonsLanguage();
+                    
+                    // 更新右侧详情面板
+                    UpdateDetailsPanelLanguage();
+                    
+                    // 更新分类相关文本
+                    foreach (var category in categories)
+                    {
+                        switch (category.Name)
+                        {
+                            case "全部": category.Name = "All"; break;
+                            case "已启用": category.Name = "Enabled"; break;
+                            case "已禁用": category.Name = "Disabled"; break;
+                            case "未分类": category.Name = "Uncategorized"; break;
+                            case "服装": category.Name = "Outfits"; break;
+                            case "其他": category.Name = "Others"; break;
+                            case "人物": category.Name = "Characters"; break;
+                            case "面部": category.Name = "Face"; break;
+                            case "武器": category.Name = "Weapons"; break;
+                            case "修改": category.Name = "Modifications"; break;
+                        }
+                    }
+                    
+                    // 更新MOD状态和类型文本
+                    foreach (var mod in allMods)
+                    {
+                        // 状态翻译
+                        if (mod.Status == "已启用") mod.Status = "Enabled";
+                        else if (mod.Status == "已禁用") mod.Status = "Disabled";
+                        
+                        // 类型翻译
+                        switch (mod.Type)
+                        {
+                            case "服装": mod.Type = "Outfits"; break;
+                            case "其他": mod.Type = "Others"; break;
+                            case "人物": mod.Type = "Characters"; break;
+                            case "面部": mod.Type = "Face"; break;
+                            case "武器": mod.Type = "Weapons"; break;
+                            case "修改": mod.Type = "Modifications"; break;
+                        }
+                        
+                        // 描述翻译
+                        if (string.IsNullOrEmpty(mod.Description) || mod.Description == "暂无描述")
+                        {
+                            mod.Description = "No description available";
+                        }
+                    }
+                }
+                else
+                {
+                    // 切换到中文
+                    this.Title = "爱酱MOD管理器";
+                    
+                    // 更新主界面UI元素
+                    if (SelectAllCheckBox != null) SelectAllCheckBox.Content = "全选";
+                    if (ImportModBtn != null) ImportModBtn.Content = "📥 导入MOD";
+                    if (ImportModBtn2 != null) ImportModBtn2.Content = "📥 导入MOD";
+                    if (LaunchGameBtn != null) LaunchGameBtn.Content = "▶️ 启动游戏";
+                    
+                    // 更新游戏选择器中的选项
+                    UpdateGameSelectorLanguage();
+                    
+                    // 更新搜索框占位符
+                    UpdateSearchPlaceholder();
+                    
+                    // 更新过滤按钮
+                    if (EnabledFilterBtn != null) EnabledFilterBtn.Content = "已启用";
+                    if (DisabledFilterBtn != null) DisabledFilterBtn.Content = "已禁用";
+                    
+                    // 更新操作按钮
+                    UpdateOperationButtonsLanguage();
+                    
+                    // 更新右侧详情面板
+                    UpdateDetailsPanelLanguage();
+                    
+                    // 更新分类相关文本
+                    foreach (var category in categories)
+                    {
+                        switch (category.Name)
+                        {
+                            case "All": category.Name = "全部"; break;
+                            case "Enabled": category.Name = "已启用"; break;
+                            case "Disabled": category.Name = "已禁用"; break;
+                            case "Uncategorized": category.Name = "未分类"; break;
+                            case "Outfits": category.Name = "服装"; break;
+                            case "Others": category.Name = "其他"; break;
+                            case "Characters": category.Name = "人物"; break;
+                            case "Face": category.Name = "面部"; break;
+                            case "Weapons": category.Name = "武器"; break;
+                            case "Modifications": category.Name = "修改"; break;
+                        }
+                    }
+                    
+                    // 更新MOD状态和类型文本
+                    foreach (var mod in allMods)
+                    {
+                        // 状态翻译
+                        if (mod.Status == "Enabled") mod.Status = "已启用";
+                        else if (mod.Status == "Disabled") mod.Status = "已禁用";
+                        
+                        // 类型翻译
+                        switch (mod.Type)
+                        {
+                            case "Outfits": mod.Type = "服装"; break;
+                            case "Others": mod.Type = "其他"; break;
+                            case "Characters": mod.Type = "人物"; break;
+                            case "Face": mod.Type = "面部"; break;
+                            case "Weapons": mod.Type = "武器"; break;
+                            case "Modifications": mod.Type = "修改"; break;
+                        }
+                        
+                        // 描述翻译
+                        if (string.IsNullOrEmpty(mod.Description) || mod.Description == "No description available")
+                        {
+                            mod.Description = "暂无描述";
+                        }
+                    }
+                }
+                
+                // 刷新显示
+                RefreshModDisplay();
+                RefreshCategoryDisplay();
+                UpdateModCountDisplay();
+                
+                // 更新设置菜单文本
+                UpdateSettingsMenuLanguage();
+                
+                // 更新剑星专属按钮
+                UpdateStellarButtonLanguage();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新语言失败: {ex.Message}");
+            }
+        }
+        
+        // 更新剑星按钮的语言显示
+        private void UpdateStellarButtonLanguage()
+        {
+            try
+            {
+                if (CollectionToolButton != null)
+                {
+                    CollectionToolButton.Content = isEnglishMode ? "📋 Collection Tools" : "📋 收集工具箱";
+                    CollectionToolButton.ToolTip = isEnglishMode ? "Stellar Blade Collection Tools" : "剑星收集工具";
+                }
+                
+                if (StellarModCollectionButton != null)
+                {
+                    StellarModCollectionButton.Content = isEnglishMode ? "🗂️ Stellar MOD Collection" : "🗂️ 剑星MOD合集";
+                    StellarModCollectionButton.ToolTip = isEnglishMode ? "Access Stellar Blade MOD cloud collection" : "访问剑星MOD云盘合集";
+                }
+                
+                // 更新收集工具子菜单
+                if (CollectionToolMenu != null)
+                {
+                    foreach (MenuItem item in CollectionToolMenu.Items)
+                    {
+                        switch (item.Header?.ToString())
+                        {
+                            case "物品收集":
+                            case "Item Collection":
+                                item.Header = isEnglishMode ? "Item Collection" : "物品收集";
+                                break;
+                            case "衣服收集":
+                            case "Clothing Collection":
+                                item.Header = isEnglishMode ? "Clothing Collection" : "衣服收集";
+                                break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新剑星按钮语言失败: {ex.Message}");
+            }
+        }
+
+        // 更新设置菜单的语言
+        private void UpdateSettingsMenuLanguage()
+        {
+            try
+            {
+                if (SettingsContextMenu != null)
+                {
+                    foreach (MenuItem item in SettingsContextMenu.Items)
+                    {
+                        if (isEnglishMode)
+                        {
+                            switch (item.Header?.ToString())
+                            {
+                                case "路径设置": item.Header = "Path Settings"; break;
+                                case "切换英文 (Language)": item.Header = "切换中文 (Language)"; break;
+                                case "关于爱酱MOD管理器": item.Header = "About UE MOD Manager"; break;
+                                case "检查更新": item.Header = "Check Updates"; break;
+                            }
+                        }
+                        else
+                        {
+                            switch (item.Header?.ToString())
+                            {
+                                case "Path Settings": item.Header = "路径设置"; break;
+                                case "切换中文 (Language)": item.Header = "切换英文 (Language)"; break;
+                                case "About UE MOD Manager": item.Header = "关于爱酱MOD管理器"; break;
+                                case "Check Updates": item.Header = "检查更新"; break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新设置菜单语言失败: {ex.Message}");
+            }
+        }
+
+        // 更新游戏选择器的语言
+        private void UpdateGameSelectorLanguage()
+        {
+            try
+            {
+                if (GameList != null)
+                {
+                    var savedSelection = GameList.SelectedIndex;
+                    
+                    // 暂时取消事件监听以避免触发SelectionChanged
+                    GameList.SelectionChanged -= GameList_SelectionChanged;
+                    
+                    for (int i = 0; i < GameList.Items.Count; i++)
+                    {
+                        if (GameList.Items[i] is ComboBoxItem item)
+                        {
+                            if (isEnglishMode)
+                            {
+                                switch (item.Content?.ToString())
+                                {
+                                    case "请选择游戏": item.Content = "Please Select Game"; break;
+                                    case "剑星 (Stellar Blade)": item.Content = "Stellar Blade"; break;
+                                    case "黑神话·悟空": item.Content = "Black Myth: Wukong"; break;
+                                    case "光与影：33号远征队": item.Content = "Enshrouded"; break;
+                                    case "其他虚幻引擎游戏": item.Content = "Other UE Games"; break;
+                                }
+                            }
+                            else
+                            {
+                                switch (item.Content?.ToString())
+                                {
+                                    case "Please Select Game": item.Content = "请选择游戏"; break;
+                                    case "Stellar Blade": item.Content = "剑星 (Stellar Blade)"; break;
+                                    case "Black Myth: Wukong": item.Content = "黑神话·悟空"; break;
+                                    case "Enshrouded": item.Content = "光与影：33号远征队"; break;
+                                    case "Other UE Games": item.Content = "其他虚幻引擎游戏"; break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 恢复选择状态和事件监听
+                    GameList.SelectedIndex = savedSelection;
+                    GameList.SelectionChanged += GameList_SelectionChanged;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新游戏选择器语言失败: {ex.Message}");
+            }
+        }
+
+        // 更新搜索框占位符
+        private void UpdateSearchPlaceholder()
+        {
+            try
+            {
+                if (SearchPlaceholder != null)
+                {
+                    if (isEnglishMode)
+                    {
+                        SearchPlaceholder.Text = "Enter MOD name or description keywords...";
+                    }
+                    else
+                    {
+                        SearchPlaceholder.Text = "输入MOD名称或描述关键词...";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新搜索框占位符失败: {ex.Message}");
+            }
+        }
+
+        // 更新操作按钮的语言
+        private void UpdateOperationButtonsLanguage()
+        {
+            try
+            {
+                // 查找XAML中的按钮并更新其文本
+                var mainGrid = this.Content as Grid;
+                if (mainGrid != null)
+                {
+                    // 查找所有按钮并更新
+                    UpdateButtonTextInVisualTree(mainGrid);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新操作按钮语言失败: {ex.Message}");
+            }
+        }
+
+        // 递归更新可视化树中的按钮文本
+        private void UpdateButtonTextInVisualTree(DependencyObject parent)
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                
+                if (child is Button button)
+                {
+                    if (isEnglishMode)
+                    {
+                        switch (button.Content?.ToString())
+                        {
+                            case "新增": button.Content = "Add"; break;
+                            case "删除": button.Content = "Delete"; break;
+                            case "重命名": button.Content = "Rename"; break;
+                            case "🚫 禁用全部": button.Content = "🚫 Disable All"; break;
+                            case "✅ 启用全部": button.Content = "✅ Enable All"; break;
+                            case "🗑️ 删除所选": button.Content = "🗑️ Delete Selected"; break;
+                        }
+                    }
+                    else
+                    {
+                        switch (button.Content?.ToString())
+                        {
+                            case "Add": button.Content = "新增"; break;
+                            case "Delete": button.Content = "删除"; break;
+                            case "Rename": button.Content = "重命名"; break;
+                            case "🚫 Disable All": button.Content = "🚫 禁用全部"; break;
+                            case "✅ Enable All": button.Content = "✅ 启用全部"; break;
+                            case "🗑️ Delete Selected": button.Content = "🗑️ 删除所选"; break;
+                        }
+                    }
+                }
+                else if (child is TextBlock textBlock)
+                {
+                    // 更新特定的TextBlock
+                    if (isEnglishMode)
+                    {
+                        switch (textBlock.Text)
+                        {
+                            case "虚幻引擎MOD管理器": textBlock.Text = "Unreal Engine MOD Manager"; break;
+                            case "MOD分类": textBlock.Text = "MOD Categories"; break;
+                        }
+                    }
+                    else
+                    {
+                        switch (textBlock.Text)
+                        {
+                            case "Unreal Engine MOD Manager": textBlock.Text = "虚幻引擎MOD管理器"; break;
+                            case "MOD Categories": textBlock.Text = "MOD分类"; break;
+                        }
+                    }
+                }
+                
+                // 递归处理子元素
+                UpdateButtonTextInVisualTree(child);
+            }
+        }
+
+        // 更新右侧详情面板的语言
+        private void UpdateDetailsPanelLanguage()
+        {
+            try
+            {
+                // 查找右侧面板中的所有TextBlock和Button
+                var mainGrid = this.Content as Grid;
+                if (mainGrid != null)
+                {
+                    UpdateDetailsPanelInVisualTree(mainGrid);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新详情面板语言失败: {ex.Message}");
+            }
+        }
+
+        // 递归更新详情面板中的元素
+        private void UpdateDetailsPanelInVisualTree(DependencyObject parent)
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                
+                if (child is TextBlock textBlock)
+                {
+                    if (isEnglishMode)
+                    {
+                        switch (textBlock.Text)
+                        {
+                            case "状态:": textBlock.Text = "Status:"; break;
+                            case "原始名称:": textBlock.Text = "Original Name:"; break;
+                            case "导入日期:": textBlock.Text = "Import Date:"; break;
+                            case "文件大小:": textBlock.Text = "File Size:"; break;
+                            case "描述:": textBlock.Text = "Description:"; break;
+                            case "未选择": textBlock.Text = "Not Selected"; break;
+                            case "请选择一个MOD查看详情": textBlock.Text = "Please select a MOD to view details"; break;
+                            case "✏️ 重命名": textBlock.Text = "✏️ Rename"; break;
+                            case "🖼️ 修改预览图": textBlock.Text = "🖼️ Change Preview"; break;
+                            case "⛔ 禁用MOD": textBlock.Text = "⛔ Disable MOD"; break;
+                            case "🗑️ 删除MOD": textBlock.Text = "🗑️ Delete MOD"; break;
+                        }
+                    }
+                    else
+                    {
+                        switch (textBlock.Text)
+                        {
+                            case "Status:": textBlock.Text = "状态:"; break;
+                            case "Original Name:": textBlock.Text = "原始名称:"; break;
+                            case "Import Date:": textBlock.Text = "导入日期:"; break;
+                            case "File Size:": textBlock.Text = "文件大小:"; break;
+                            case "Description:": textBlock.Text = "描述:"; break;
+                            case "Not Selected": textBlock.Text = "未选择"; break;
+                            case "Please select a MOD to view details": textBlock.Text = "请选择一个MOD查看详情"; break;
+                            case "✏️ Rename": textBlock.Text = "✏️ 重命名"; break;
+                            case "🖼️ Change Preview": textBlock.Text = "🖼️ 修改预览图"; break;
+                            case "⛔ Disable MOD": textBlock.Text = "⛔ 禁用MOD"; break;
+                            case "🗑️ Delete MOD": textBlock.Text = "🗑️ 删除MOD"; break;
+                        }
+                    }
+                }
+                
+                // 递归处理子元素
+                UpdateDetailsPanelInVisualTree(child);
+            }
+        }
+
+        // 关于对话框功能
+        private void ShowAboutDialog()
+        {
+            try
+            {
+                // 创建自定义对话框
+                var dialog = new Window
+                {
+                    Title = "关于爱酱MOD管理器",
+                    Width = 500,
+                    Height = 600,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    ResizeMode = ResizeMode.NoResize,
+                    Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
+                    WindowStyle = WindowStyle.ToolWindow
+                };
+
+                var mainPanel = new StackPanel
+                {
+                    Margin = new Thickness(20),
+                    Orientation = Orientation.Vertical
+                };
+
+                // 标题
+                var titleText = new TextBlock
+                {
+                    Text = "爱酱剑星MOD管理器 v1.7",
+                    FontSize = 20,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0, 212, 170)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+
+                // 免费声明
+                var freeText = new TextBlock
+                {
+                    Text = "本管理器完全免费",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20)
+                };
+
+                // B站链接
+                var biliText = new TextBlock
+                {
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+                biliText.Inlines.Add(new Run("B站: "));
+                var biliLink = new Hyperlink(new Run("空竹竹竹"))
+                {
+                    NavigateUri = new Uri("https://space.bilibili.com/232926208"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0, 212, 170))
+                };
+                biliLink.RequestNavigate += (s, e) => {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = e.Uri.ToString(),
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowCustomMessageBox($"无法打开链接: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+                biliText.Inlines.Add(biliLink);
+
+                // QQ群链接
+                var qqText = new TextBlock
+                {
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+                qqText.Inlines.Add(new Run("QQ群: "));
+                var qqLink = new Hyperlink(new Run("682707942"))
+                {
+                    NavigateUri = new Uri("https://qm.qq.com/q/sYnTmQRdOo"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0, 212, 170))
+                };
+                qqLink.RequestNavigate += (s, e) => {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = e.Uri.ToString(),
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowCustomMessageBox($"无法打开链接: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+                qqText.Inlines.Add(qqLink);
+
+                // 欢迎文本
+                var welcomeText = new TextBlock
+                {
+                    Text = "欢迎加入QQ群获取最新MOD和反馈建议!",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    Margin = new Thickness(0, 0, 0, 20),
+                    TextWrapping = TextWrapping.Wrap
+                };
+
+                // 捐赠图片区域
+                var donationImage = CreateDonationImageControl();
+
+                // 捐赠文本
+                var donationText = new TextBlock
+                {
+                    Text = "如果对你有帮助，可以请我喝一杯蜜雪冰城~",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Colors.LightGray),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20),
+                    TextWrapping = TextWrapping.Wrap
+                };
+
+                // 感谢名单
+                var thanksText = new TextBlock
+                {
+                    Text = "捐赠感谢:\n胖虎、YUki\n春告鳥、蘭\n神秘不保底男\n文铭、阪、林墨\nDaisuke、虎子哥\n爱酱游戏群全体群友",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Colors.LightGray),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20),
+                    TextWrapping = TextWrapping.Wrap
+                };
+
+                // 关闭按钮
+                var closeButton = new Button
+                {
+                    Content = "关闭",
+                    Width = 100,
+                    Height = 35,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Background = new SolidColorBrush(Color.FromRgb(0, 212, 170)),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(0),
+                    FontSize = 14
+                };
+                closeButton.Click += (s, e) => dialog.Close();
+
+                // 组装界面
+                mainPanel.Children.Add(titleText);
+                mainPanel.Children.Add(freeText);
+                mainPanel.Children.Add(biliText);
+                mainPanel.Children.Add(qqText);
+                mainPanel.Children.Add(welcomeText);
+                mainPanel.Children.Add(donationImage);
+                mainPanel.Children.Add(donationText);
+                mainPanel.Children.Add(thanksText);
+                mainPanel.Children.Add(closeButton);
+
+                dialog.Content = mainPanel;
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"显示关于对话框失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 创建捐赠图片控件
+        private Border CreateDonationImageControl()
+        {
+            try
+            {
+                var donationImagePath = IOPath.Combine(AppDomain.CurrentDomain.BaseDirectory, "捐赠.png");
+                
+                if (File.Exists(donationImagePath))
+                {
+                    // 如果捐赠图片存在，显示图片
+                    var imageSource = new BitmapImage();
+                    imageSource.BeginInit();
+                    imageSource.UriSource = new Uri(donationImagePath, UriKind.Absolute);
+                    imageSource.DecodePixelWidth = 200;
+                    imageSource.DecodePixelHeight = 200;
+                    imageSource.EndInit();
+                    
+                    var image = new Image
+                    {
+                        Source = imageSource,
+                        Width = 200,
+                        Height = 200,
+                        Stretch = Stretch.Uniform
+                    };
+                    
+                    return new Border
+                    {
+                        Width = 200,
+                        Height = 200,
+                        CornerRadius = new CornerRadius(10),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 10),
+                        ClipToBounds = true,
+                        Child = image
+                    };
+                }
+                else
+                {
+                    // 如果图片不存在，显示占位符和提示
+                    return new Border
+                    {
+                        Width = 200,
+                        Height = 200,
+                        Background = new SolidColorBrush(Color.FromRgb(26, 52, 77)),
+                        CornerRadius = new CornerRadius(10),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 10),
+                        Child = new StackPanel
+                        {
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = "💰",
+                                    FontSize = 32,
+                                    Foreground = new SolidColorBrush(Colors.White),
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    Margin = new Thickness(0, 0, 0, 10)
+                                },
+                                new TextBlock
+                                {
+                                    Text = "捐赠二维码",
+                                    FontSize = 14,
+                                    Foreground = new SolidColorBrush(Colors.White),
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    TextAlignment = TextAlignment.Center
+                                },
+                                new TextBlock
+                                {
+                                    Text = "(请放置 捐赠.png 到程序目录)",
+                                    FontSize = 10,
+                                    Foreground = new SolidColorBrush(Colors.LightGray),
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    TextAlignment = TextAlignment.Center,
+                                    Margin = new Thickness(0, 5, 0, 0)
+                                }
+                            }
+                        }
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"创建捐赠图片控件失败: {ex.Message}");
+                
+                // 出错时返回简单占位符
+                return new Border
+                {
+                    Width = 200,
+                    Height = 200,
+                    Background = new SolidColorBrush(Color.FromRgb(26, 52, 77)),
+                    CornerRadius = new CornerRadius(10),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 10),
+                    Child = new TextBlock
+                    {
+                        Text = "💰\n捐赠二维码",
+                        FontSize = 16,
+                        Foreground = new SolidColorBrush(Colors.White),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextAlignment = TextAlignment.Center
+                    }
+                };
+            }
+        }
+
+        // 检查更新功能
+        private async void CheckForUpdates()
+        {
+            try
+            {
+                ShowCustomMessageBox("正在检查更新，请稍候...", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                // 使用GitHub API检查最新版本
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    client.DefaultRequestHeaders.Add("User-Agent", "UEModManager");
+                    
+                    var response = await client.GetStringAsync("https://api.github.com/repos/velist/StellarBladeModManager/releases/latest");
+                    
+                    // 解析JSON响应
+                    var jsonDoc = System.Text.Json.JsonDocument.Parse(response);
+                    var root = jsonDoc.RootElement;
+                    
+                    var latestVersion = root.GetProperty("tag_name").GetString();
+                    var downloadUrl = root.GetProperty("html_url").GetString();
+                    var releaseNotes = root.GetProperty("body").GetString();
+                    
+                    var currentVersion = "v1.9"; // 当前版本号
+                    
+                    if (latestVersion != currentVersion)
+                    {
+                        var updateMessage = $"发现新版本！\n\n" +
+                                          $"当前版本: {currentVersion}\n" +
+                                          $"最新版本: {latestVersion}\n\n" +
+                                          $"更新内容:\n{releaseNotes}\n\n" +
+                                          $"是否打开下载页面？";
+                        
+                        var result = ShowCustomMessageBox(updateMessage, "发现新版本", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                        
+                        if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(downloadUrl))
+                        {
+                            try
+                            {
+                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                {
+                                    FileName = downloadUrl,
+                                    UseShellExecute = true
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                ShowCustomMessageBox($"无法打开下载页面: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ShowCustomMessageBox("当前已是最新版本！", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+            }
+            catch (System.Net.Http.HttpRequestException)
+            {
+                ShowUpdateFailedDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowUpdateFailedDialog();
+            }
+        }
+
+        // 显示更新失败对话框，提供QQ群链接
+        private void ShowUpdateFailedDialog()
+        {
+            try
+            {
+                // 创建自定义对话框
+                var dialog = new Window
+                {
+                    Title = "检查更新失败",
+                    Width = 400,
+                    Height = 250,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    ResizeMode = ResizeMode.NoResize,
+                    Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
+                    WindowStyle = WindowStyle.ToolWindow
+                };
+
+                var mainPanel = new StackPanel
+                {
+                    Margin = new Thickness(20),
+                    Orientation = Orientation.Vertical
+                };
+
+                // 错误信息
+                var errorText = new TextBlock
+                {
+                    Text = "无法连接到更新服务器",
+                    FontSize = 16,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Colors.Orange),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20)
+                };
+
+                // 提示文本
+                var hintText = new TextBlock
+                {
+                    Text = "请检查网络连接，或加入QQ群获取最新版本：",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 15),
+                    TextWrapping = TextWrapping.Wrap,
+                    TextAlignment = TextAlignment.Center
+                };
+
+                // QQ群链接
+                var qqGroupText = new TextBlock
+                {
+                    FontSize = 16,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20)
+                };
+                var qqGroupLink = new Hyperlink(new Run("QQ群: 682707942"))
+                {
+                    NavigateUri = new Uri("https://qm.qq.com/q/sYnTmQRdOo"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0, 212, 170)),
+                    FontWeight = FontWeights.Bold
+                };
+                qqGroupLink.RequestNavigate += (s, e) => {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = e.Uri.ToString(),
+                            UseShellExecute = true
+                        });
+                        dialog.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowCustomMessageBox($"无法打开QQ群链接: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+                qqGroupText.Inlines.Add(qqGroupLink);
+
+                // 按钮面板
+                var buttonPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+
+                // 重试按钮
+                var retryButton = new Button
+                {
+                    Content = "重试",
+                    Width = 80,
+                    Height = 35,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    Background = new SolidColorBrush(Color.FromRgb(0, 212, 170)),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(0),
+                    FontSize = 14
+                };
+                retryButton.Click += (s, e) => {
+                    dialog.Close();
+                    CheckForUpdates();
+                };
+
+                // 关闭按钮
+                var closeButton = new Button
+                {
+                    Content = "关闭",
+                    Width = 80,
+                    Height = 35,
+                    Background = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(0),
+                    FontSize = 14
+                };
+                closeButton.Click += (s, e) => dialog.Close();
+
+                buttonPanel.Children.Add(retryButton);
+                buttonPanel.Children.Add(closeButton);
+
+                // 组装界面
+                mainPanel.Children.Add(errorText);
+                mainPanel.Children.Add(hintText);
+                mainPanel.Children.Add(qqGroupText);
+                mainPanel.Children.Add(buttonPanel);
+
+                dialog.Content = mainPanel;
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowCustomMessageBox($"显示更新失败对话框出错: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void ToggleModStatus(object sender, RoutedEventArgs e)
@@ -3306,30 +4452,53 @@ namespace UEModManager
             {
                 if (ModCountText != null)
                 {
-                    var selectedItem = CategoryList.SelectedItem;
-                    string categoryName = "全部";
-                    int modCount = allMods.Count;
+                    var selectedItem = CategoryList?.SelectedItem;
+                    string categoryName = isEnglishMode ? "All" : "全部";
                     
                     if (selectedItem is Category category)
                     {
                         categoryName = category.Name;
-                        modCount = category.Count;
                     }
                     else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
                     {
                         categoryName = categoryItem.Name;
-                        modCount = categoryItem.ModCount;
                     }
                     
-                    // 获取当前显示的MOD数量（考虑筛选结果）
+                    // 获取当前显示的MOD数量（考虑搜索和分类筛选结果）
                     var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
-                    if (currentMods != null)
+                    var modCount = currentMods?.Count() ?? 0;
+                    
+                    // 检查是否有搜索关键词
+                    var searchText = SearchBox?.Text?.Trim();
+                    var hasSearchFilter = !string.IsNullOrEmpty(searchText);
+                    
+                    // 格式化显示文本，根据语言模式和筛选状态
+                    string displayText;
+                    if (isEnglishMode)
                     {
-                        modCount = currentMods.Count();
+                        if (hasSearchFilter)
+                        {
+                            displayText = $"Search Results in {categoryName} ({modCount})";
+                        }
+                        else
+                        {
+                            displayText = $"{categoryName} MODs ({modCount})";
+                        }
+                    }
+                    else
+                    {
+                        if (hasSearchFilter)
+                        {
+                            displayText = $"{categoryName} 搜索结果 ({modCount})";
+                        }
+                        else
+                        {
+                            displayText = $"{categoryName} MOD ({modCount})";
+                        }
                     }
                     
-                    ModCountText.Text = $"{categoryName} ({modCount})";
-                    Console.WriteLine($"[DEBUG] 更新C1区标题: {categoryName} ({modCount})");
+                    ModCountText.Text = displayText;
+                    Console.WriteLine($"[DEBUG] 更新C1区标题: {displayText}，搜索词: '{searchText}'");
                 }
             }
             catch (Exception ex)
@@ -3528,16 +4697,110 @@ namespace UEModManager
             try
             {
                 statsTimer = new DispatcherTimer();
-                statsTimer.Interval = TimeSpan.FromSeconds(1);
+                statsTimer.Interval = TimeSpan.FromSeconds(2);
                 statsTimer.Tick += (s, e) => {
                     // 更新统计信息
                     UpdateModCountDisplay();
+                    UpdateStatusBarInfo();
                 };
                 statsTimer.Start();
+                
+                // 立即更新一次状态栏
+                UpdateStatusBarInfo();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"启动统计计时器失败: {ex.Message}");
+            }
+        }
+
+        // 更新底部状态栏信息
+        private void UpdateStatusBarInfo()
+        {
+            try
+            {
+                // 更新MOD目录显示
+                if (ModDirectoryText != null)
+                {
+                    if (!string.IsNullOrEmpty(currentModPath))
+                    {
+                        var displayPath = currentModPath;
+                        if (displayPath.Length > 80)
+                        {
+                            displayPath = "..." + displayPath.Substring(displayPath.Length - 77);
+                        }
+                        
+                        if (isEnglishMode)
+                        {
+                            ModDirectoryText.Text = $"MOD Directory: {displayPath}";
+                        }
+                        else
+                        {
+                            ModDirectoryText.Text = $"MOD目录: {displayPath}";
+                        }
+                    }
+                    else
+                    {
+                        ModDirectoryText.Text = isEnglishMode ? "MOD Directory: Not Configured" : "MOD目录: 未配置";
+                    }
+                }
+
+                // 更新系统信息
+                if (SystemInfoText != null)
+                {
+                    var enabledCount = allMods.Count(m => m.Status == "已启用" || m.Status == "Enabled");
+                    var totalCount = allMods.Count;
+                    
+                    // 计算MOD文件总大小（近似）
+                    var totalSizeMB = CalculateModsSize();
+                    
+                    if (isEnglishMode)
+                    {
+                        SystemInfoText.Text = $"Loaded MODs: {enabledCount}/{totalCount} | Memory Usage: {totalSizeMB:F1}MB";
+                    }
+                    else
+                    {
+                        SystemInfoText.Text = $"已加载MOD: {enabledCount}/{totalCount} | 内存占用: {totalSizeMB:F1}MB";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新状态栏信息失败: {ex.Message}");
+            }
+        }
+
+        // 计算MOD文件总大小（MB）
+        private double CalculateModsSize()
+        {
+            try
+            {
+                double totalBytes = 0;
+                
+                if (!string.IsNullOrEmpty(currentModPath) && Directory.Exists(currentModPath))
+                {
+                    var modFiles = Directory.GetFiles(currentModPath, "*.*", SearchOption.AllDirectories)
+                        .Where(f => f.EndsWith(".pak") || f.EndsWith(".ucas") || f.EndsWith(".utoc"));
+                    
+                    foreach (var file in modFiles)
+                    {
+                        try
+                        {
+                            var fileInfo = new FileInfo(file);
+                            totalBytes += fileInfo.Length;
+                        }
+                        catch
+                        {
+                            // 忽略无法访问的文件
+                        }
+                    }
+                }
+                
+                return totalBytes / (1024 * 1024); // 转换为MB
+            }
+            catch
+            {
+                return 0;
             }
         }
 
@@ -3618,7 +4881,22 @@ namespace UEModManager
         {
             try
             {
-                // 处理搜索文本变化
+                var searchBox = sender as TextBox;
+                
+                // 控制占位符显示/隐藏
+                if (SearchPlaceholder != null)
+                {
+                    if (string.IsNullOrWhiteSpace(searchBox?.Text))
+                    {
+                        SearchPlaceholder.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        SearchPlaceholder.Visibility = Visibility.Collapsed;
+                    }
+                }
+                
+                // 实时更新搜索结果
                 RefreshModDisplay();
             }
             catch (Exception ex)
@@ -4859,6 +6137,408 @@ namespace UEModManager
                 ShowCustomMessageBox($"移动到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        // 支持捐赠相关事件
+        private Popup? donationPopup;
+
+        private void DonationText_MouseEnter(object sender, MouseEventArgs e)
+        {
+            try
+            {
+                var textBlock = sender as TextBlock;
+                if (textBlock != null && donationPopup == null)
+                {
+                    // 创建弹出窗口显示捐赠二维码
+                    donationPopup = new Popup
+                    {
+                        PlacementTarget = textBlock,
+                        Placement = System.Windows.Controls.Primitives.PlacementMode.Top,
+                        AllowsTransparency = true,
+                        PopupAnimation = PopupAnimation.Fade,
+                        StaysOpen = false
+                    };
+
+                    var border = new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(42, 52, 65)),
+                        BorderThickness = new Thickness(2),
+                        CornerRadius = new CornerRadius(12),
+                        Padding = new Thickness(15),
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+
+                    var stackPanel = new StackPanel();
+
+                    var titleText = new TextBlock
+                    {
+                        Text = isEnglishMode ? "Support Development" : "支持开发",
+                        Foreground = Brushes.White,
+                        FontSize = 16,
+                        FontWeight = FontWeights.Bold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+                    stackPanel.Children.Add(titleText);
+
+                    // 尝试加载捐赠二维码图片
+                    var donationImagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "捐赠.png");
+                    if (File.Exists(donationImagePath))
+                    {
+                        var image = new Image
+                        {
+                            Source = new BitmapImage(new Uri(donationImagePath)),
+                            Width = 200,
+                            Height = 200,
+                            Margin = new Thickness(0, 0, 0, 10)
+                        };
+                        stackPanel.Children.Add(image);
+                    }
+                    else
+                    {
+                        var placeholderText = new TextBlock
+                        {
+                            Text = isEnglishMode ? "Donation QR Code\n(File: 捐赠.png not found)" : "捐赠二维码\n(文件：捐赠.png 未找到)",
+                            Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
+                            FontSize = 14,
+                            TextAlignment = TextAlignment.Center,
+                            Width = 200,
+                            Height = 200,
+                            Background = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                            Padding = new Thickness(10),
+                            Margin = new Thickness(0, 0, 0, 10)
+                        };
+                        stackPanel.Children.Add(placeholderText);
+                    }
+
+                    var hintText = new TextBlock
+                    {
+                        Text = isEnglishMode ? "Hover to view, click for more info" : "悬停查看，点击了解更多",
+                        Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
+                        FontSize = 12,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    };
+                    stackPanel.Children.Add(hintText);
+
+                    border.Child = stackPanel;
+                    donationPopup.Child = border;
+                    donationPopup.IsOpen = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"显示捐赠提示失败: {ex.Message}");
+            }
+        }
+
+        private void DonationText_MouseLeave(object sender, MouseEventArgs e)
+        {
+            try
+            {
+                if (donationPopup != null)
+                {
+                    donationPopup.IsOpen = false;
+                    donationPopup = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"隐藏捐赠提示失败: {ex.Message}");
+            }
+        }
+
+        private void DonationText_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                // 点击打开关于窗口
+                ShowAboutDialog();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"打开关于窗口失败: {ex.Message}");
+            }
+        }
+
+        // 剑星MOD合集点击事件
+        private void ModCollectionText_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                ShowModCollectionDialog();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"显示MOD合集窗口失败: {ex.Message}");
+            }
+        }
+
+        // 显示MOD合集窗口
+        private void ShowModCollectionDialog()
+        {
+            try
+            {
+                var dialog = new Window
+                {
+                    Title = isEnglishMode ? "Stellar Blade MOD Collection" : "剑星MOD合集",
+                    Width = 500,
+                    Height = 400,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
+                    WindowStyle = WindowStyle.ToolWindow,
+                    ResizeMode = ResizeMode.NoResize
+                };
+
+                var mainBorder = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
+                    CornerRadius = new CornerRadius(12),
+                    Padding = new Thickness(30)
+                };
+
+                var stackPanel = new StackPanel();
+
+                // 标题
+                var titleText = new TextBlock
+                {
+                    Text = isEnglishMode ? "Stellar Blade MOD Collection" : "剑星MOD合集",
+                    Foreground = Brushes.White,
+                    FontSize = 24,
+                    FontWeight = FontWeights.Bold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 30)
+                };
+                stackPanel.Children.Add(titleText);
+
+                // 描述文字
+                var descText = new TextBlock
+                {
+                    Text = isEnglishMode ? 
+                        "Access our cloud storage collection with hundreds of high-quality MODs" : 
+                        "访问我们的云盘合集，获取数百个精品MOD资源",
+                    Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
+                    FontSize = 14,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 30)
+                };
+                stackPanel.Children.Add(descText);
+
+                // 网盘选项
+                var cloudPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 20)
+                };
+
+                // 迅雷云盘
+                var xunleiButton = CreateCloudButton(
+                    isEnglishMode ? "Thunder Cloud" : "迅雷云盘", 
+                    "迅雷云盘.png");
+                xunleiButton.Margin = new Thickness(0, 0, 20, 0);
+                cloudPanel.Children.Add(xunleiButton);
+
+                // 百度网盘
+                var baiduButton = CreateCloudButton(
+                    isEnglishMode ? "Baidu Cloud" : "百度网盘", 
+                    "百度网盘.png");
+                cloudPanel.Children.Add(baiduButton);
+
+                stackPanel.Children.Add(cloudPanel);
+
+                // 关闭按钮
+                var closeButton = new Button
+                {
+                    Content = isEnglishMode ? "Close" : "关闭",
+                    Width = 100,
+                    Height = 35,
+                    Background = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0),
+                    FontSize = 14,
+                    Cursor = Cursors.Hand,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 30, 0, 0)
+                };
+                closeButton.Click += (s, e) => dialog.Close();
+                stackPanel.Children.Add(closeButton);
+
+                mainBorder.Child = stackPanel;
+                dialog.Content = mainBorder;
+
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"显示MOD合集窗口失败: {ex.Message}");
+                MessageBox.Show($"显示MOD合集窗口失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 创建云盘按钮
+        private Border CreateCloudButton(string title, string imageName)
+        {
+            var border = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(26, 35, 50)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(20),
+                Cursor = Cursors.Hand,
+                Width = 180,
+                Height = 200
+            };
+
+            var stackPanel = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            // 尝试加载图片
+            var imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, imageName);
+            if (File.Exists(imagePath))
+            {
+                var image = new Image
+                {
+                    Source = new BitmapImage(new Uri(imagePath)),
+                    Width = 100,
+                    Height = 100,
+                    Margin = new Thickness(0, 0, 0, 15)
+                };
+                stackPanel.Children.Add(image);
+            }
+            else
+            {
+                var placeholder = new TextBlock
+                {
+                    Text = "📁",
+                    FontSize = 48,
+                    Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 15)
+                };
+                stackPanel.Children.Add(placeholder);
+            }
+
+            var titleText = new TextBlock
+            {
+                Text = title,
+                Foreground = Brushes.White,
+                FontSize = 16,
+                FontWeight = FontWeights.Medium,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            stackPanel.Children.Add(titleText);
+
+            border.Child = stackPanel;
+
+            // 鼠标事件
+            border.MouseEnter += (s, e) =>
+            {
+                border.Background = new SolidColorBrush(Color.FromRgb(42, 52, 65));
+            };
+            border.MouseLeave += (s, e) =>
+            {
+                border.Background = new SolidColorBrush(Color.FromRgb(26, 35, 50));
+            };
+            border.MouseDown += (s, e) =>
+            {
+                // 这里可以添加打开云盘链接的逻辑
+                var message = isEnglishMode ? 
+                    $"Opening {title}...\n(Feature will be available in future updates)" :
+                    $"正在打开{title}...\n(功能将在后续版本中开放)";
+                MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+            };
+
+            return border;
+        }
+
+        #region 剑星专属功能按钮事件
+
+        // 收集工具箱按钮点击事件
+        private void CollectionToolButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 显示下拉菜单
+                if (CollectionToolButton != null && CollectionToolMenu != null)
+                {
+                    CollectionToolMenu.PlacementTarget = CollectionToolButton;
+                    CollectionToolMenu.IsOpen = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"收集工具箱按钮点击失败: {ex.Message}");
+            }
+        }
+
+        // 物品收集菜单项点击事件
+        private void ItemCollectionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 打开物品收集网页
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://codepen.io/aigame/full/MYwXoGq",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"打开物品收集网页失败: {ex.Message}");
+                MessageBox.Show(
+                    $"打开物品收集网页失败: {ex.Message}\n\n请手动访问: https://codepen.io/aigame/full/MYwXoGq",
+                    "打开网页失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+        }
+
+        // 衣服收集菜单项点击事件
+        private void ClothingCollectionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 打开衣服收集网页
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://codepen.io/aigame/full/xbGaqpx",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"打开衣服收集网页失败: {ex.Message}");
+                MessageBox.Show(
+                    $"打开衣服收集网页失败: {ex.Message}\n\n请手动访问: https://codepen.io/aigame/full/xbGaqpx",
+                    "打开网页失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+        }
+
+        // 剑星MOD合集按钮点击事件
+        private void StellarModCollectionButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 显示MOD合集对话框
+                ShowModCollectionDialog();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"打开剑星MOD合集失败: {ex.Message}");
+            }
+        }
+
+        #endregion
     }
 
     public class Game
