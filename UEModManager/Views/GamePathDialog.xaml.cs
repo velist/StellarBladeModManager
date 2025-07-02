@@ -6,6 +6,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Win32;
+using System.Windows.Media;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace UEModManager.Views
 {
@@ -754,7 +757,7 @@ namespace UEModManager.Views
             }
             else
             {
-                MessageBox.Show("请确保所有路径都已正确设置", "路径无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowCustomMessageBox("请确保所有路径都已正确设置", "路径无效", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -764,7 +767,262 @@ namespace UEModManager.Views
             Close();
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        /// <summary>
+        /// 自定义深色主题MessageBox
+        /// </summary>
+        private MessageBoxResult ShowCustomMessageBox(string message, string title, MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxImage icon = MessageBoxImage.None)
+        {
+            // 根据消息长度和类型决定窗口尺寸
+            int width = 450;
+            int height = 250;
+            
+            // 对于简短的成功/信息消息，使用更小的尺寸
+            if (icon == MessageBoxImage.Information && message.Length < 50)
+            {
+                width = 350;
+                height = 200;
+            }
+            // 对于较长的消息（如系统状态），使用更大的尺寸
+            else if (message.Length > 200)
+            {
+                width = 550;
+                height = 350;
+            }
+            
+            var messageWindow = new Window
+            {
+                Title = title,
+                Width = width,
+                Height = height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0B1426")),
+                WindowStyle = WindowStyle.None,
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
+                BorderThickness = new Thickness(1)
+            };
+
+            var mainGrid = new Grid();
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 按钮
+
+            // 自定义标题栏
+            var titleBar = new Border
+            {
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
+                Padding = new Thickness(15),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
+                BorderThickness = new Thickness(0, 0, 0, 1)
+            };
+
+            var titleGrid = new Grid();
+            var titleText = new TextBlock
+            {
+                Text = title,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                FontWeight = FontWeights.Bold,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var closeButton = new Button
+            {
+                Content = "✕",
+                Width = 30,
+                Height = 30,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9CA3AF")),
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                FontSize = 14,
+                Cursor = Cursors.Hand
+            };
+
+            titleGrid.Children.Add(titleText);
+            titleGrid.Children.Add(closeButton);
+            titleBar.Child = titleGrid;
+            Grid.SetRow(titleBar, 0);
+
+            // 内容区域
+            var contentGrid = new Grid();
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // 图标
+            string iconText = icon switch
+            {
+                MessageBoxImage.Information => "ℹ️",
+                MessageBoxImage.Warning => "⚠️",
+                MessageBoxImage.Error => "❌",
+                MessageBoxImage.Question => "❓",
+                _ => "💬"
+            };
+
+            var iconBlock = new TextBlock
+            {
+                Text = iconText,
+                FontSize = 32,
+                Margin = new Thickness(20, 20, 15, 20),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Grid.SetColumn(iconBlock, 0);
+
+            // 消息文本
+            var messageText = new TextBlock
+            {
+                Text = message,
+                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                FontSize = 14,
+                Margin = new Thickness(0, 20, 20, 20),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(messageText, 1);
+
+            contentGrid.Children.Add(iconBlock);
+            contentGrid.Children.Add(messageText);
+            Grid.SetRow(contentGrid, 1);
+
+            // 按钮区域
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(20, 0, 20, 20),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1B2E"))
+            };
+
+            MessageBoxResult result = MessageBoxResult.None;
+
+            // 根据按钮类型创建按钮
+            switch (buttons)
+            {
+                case MessageBoxButton.OK:
+                    var okBtn = CreateMessageBoxButton("确定", true);
+                    okBtn.Click += (s, e) => { result = MessageBoxResult.OK; messageWindow.Close(); };
+                    buttonPanel.Children.Add(okBtn);
+                    break;
+
+                case MessageBoxButton.OKCancel:
+                    var cancelBtn1 = CreateMessageBoxButton("取消", false);
+                    var okBtn1 = CreateMessageBoxButton("确定", true);
+                    cancelBtn1.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+                    okBtn1.Click += (s, e) => { result = MessageBoxResult.OK; messageWindow.Close(); };
+                    buttonPanel.Children.Add(cancelBtn1);
+                    buttonPanel.Children.Add(okBtn1);
+                    break;
+
+                case MessageBoxButton.YesNo:
+                    var noBtn = CreateMessageBoxButton("否", false);
+                    var yesBtn = CreateMessageBoxButton("是", true);
+                    noBtn.Click += (s, e) => { result = MessageBoxResult.No; messageWindow.Close(); };
+                    yesBtn.Click += (s, e) => { result = MessageBoxResult.Yes; messageWindow.Close(); };
+                    buttonPanel.Children.Add(noBtn);
+                    buttonPanel.Children.Add(yesBtn);
+                    break;
+
+                case MessageBoxButton.YesNoCancel:
+                    var cancelBtn2 = CreateMessageBoxButton("取消", false);
+                    var noBtn2 = CreateMessageBoxButton("否", false);
+                    var yesBtn2 = CreateMessageBoxButton("是", true);
+                    cancelBtn2.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+                    noBtn2.Click += (s, e) => { result = MessageBoxResult.No; messageWindow.Close(); };
+                    yesBtn2.Click += (s, e) => { result = MessageBoxResult.Yes; messageWindow.Close(); };
+                    buttonPanel.Children.Add(cancelBtn2);
+                    buttonPanel.Children.Add(noBtn2);
+                    buttonPanel.Children.Add(yesBtn2);
+                    break;
+            }
+
+            Grid.SetRow(buttonPanel, 2);
+
+            // 关闭按钮事件
+            closeButton.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+
+            // 添加键盘支持
+            messageWindow.KeyDown += (s, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Escape)
+                {
+                    result = MessageBoxResult.Cancel;
+                    messageWindow.Close();
+                }
+                else if (e.Key == System.Windows.Input.Key.Enter && buttons == MessageBoxButton.OK)
+                {
+                    result = MessageBoxResult.OK;
+                    messageWindow.Close();
+                }
+            };
+
+            mainGrid.Children.Add(titleBar);
+            mainGrid.Children.Add(contentGrid);
+            mainGrid.Children.Add(buttonPanel);
+
+            messageWindow.Content = mainGrid;
+            messageWindow.ShowDialog();
+
+            return result;
+        }
+
+        /// <summary>
+        /// 创建MessageBox按钮
+        /// </summary>
+        private Button CreateMessageBoxButton(string text, bool isPrimary)
+        {
+            var button = new Button
+            {
+                Content = text,
+                Width = 80,
+                Height = 32,
+                Margin = new Thickness(10, 0, 0, 0),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                FontSize = 13
+            };
+
+            if (isPrimary)
+            {
+                button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                button.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E2A3A"));
+                button.FontWeight = FontWeights.Bold;
+            }
+            else
+            {
+                button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+                button.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9"));
+            }
+
+            // 添加鼠标悬停效果
+            button.MouseEnter += (s, e) =>
+            {
+                if (isPrimary)
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B"));
+                }
+                else
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6B7280"));
+                }
+            };
+
+            button.MouseLeave += (s, e) =>
+            {
+                if (isPrimary)
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"));
+                }
+                else
+                {
+                    button.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+                }
+            };
+
+            return button;
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged = delegate { };
         
         protected virtual void OnPropertyChanged(string propertyName)
         {

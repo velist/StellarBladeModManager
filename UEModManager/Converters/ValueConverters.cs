@@ -282,10 +282,10 @@ namespace UEModManager.Converters
                 catch (Exception ex)
                 {
                     System.Console.WriteLine($"加载图片失败: {imagePath}, 错误: {ex.Message}");
-                    return null;
+                    return DependencyProperty.UnsetValue;
                 }
             }
-            return null;
+            return DependencyProperty.UnsetValue;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

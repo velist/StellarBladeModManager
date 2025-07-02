@@ -6,7 +6,9 @@
         Title="爱酱MOD管理器" 
         Height="800" Width="1400"
         WindowStartupLocation="CenterScreen"
-        Background="#0B1426">
+        Background="#0B1426"
+        Style="{StaticResource DarkFlatWindow}"
+        >
     
     <Window.Resources>
         <!-- 全局转换器 -->
@@ -878,6 +880,7 @@
                                     BorderBrush="White" BorderThickness="1" Padding="12,6" FontSize="12"
                                     Click="RenameCategoryButton_Click" ToolTip="重命名分类"/>
                         </StackPanel>
+                        
                     </StackPanel>
                 </Border>
                 
@@ -885,14 +888,22 @@
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Style="{StaticResource DarkScrollViewer}">
                     <StackPanel Margin="15,0,15,20">
                         <!-- 分类列表 -->
-                        <ListBox x:Name="CategoryList" Background="Transparent" BorderThickness="0" 
+                        <ListBox x:Name="CategoryList" 
+                                 Background="Transparent" BorderThickness="0" 
                                  ItemContainerStyle="{StaticResource CategoryItemStyle}"
                                  SelectionMode="Extended"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ScrollViewer.CanContentScroll="False"
                                  ScrollViewer.PanningMode="VerticalOnly"
-                                 PreviewMouseWheel="CategoryList_PreviewMouseWheel">
+                                 SelectionChanged="CategoryList_SelectionChanged"
+                                 PreviewMouseWheel="CategoryList_PreviewMouseWheel" 
+                                 MouseMove="CategoryList_MouseMove"
+                                 MouseUp="CategoryList_MouseUp"
+                                 AllowDrop="True"
+                                 DragEnter="CategoryList_DragEnter"
+                                 DragOver="CategoryList_DragOver"
+                                 Drop="CategoryList_Drop">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid>
@@ -900,6 +911,7 @@
                                         <Grid Visibility="{Binding Path=., Converter={StaticResource CategoryTypeVisibilityConverter}}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
@@ -915,6 +927,15 @@
                                                 </Border.Style>
                                                 <TextBlock Text="{Binding Count}" FontSize="11" Foreground="#FBBF24" FontWeight="Medium"/>
                                             </Border>
+                                            <!-- 拖拽手柄 -->
+                                            <Border Grid.Column="2" Background="Transparent" Padding="4,0" Margin="2,0,0,0" 
+                                                    Cursor="SizeAll" ToolTip="拖拽排序" 
+                                                    MouseDown="CategoryDragHandle_MouseDown"
+                                                    MouseEnter="CategoryDragHandle_MouseEnter"
+                                                    MouseLeave="CategoryDragHandle_MouseLeave">
+                                                <TextBlock x:Name="DragHandleIcon" Text="⋮⋮" FontSize="10" Foreground="#6B7280" 
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
                                         </Grid>
                                         
                                         <!-- CategoryItem类型显示 -->
@@ -922,10 +943,20 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="14" Foreground="#10B981" VerticalAlignment="Center"/>
                                             <Border Grid.Column="1" Background="#4010B981" CornerRadius="10" Padding="8,2" Margin="5,0,0,0">
                                                 <TextBlock Text="{Binding ModCount}" FontSize="11" Foreground="#10B981" FontWeight="Medium"/>
+                                            </Border>
+                                            <!-- 拖拽手柄 -->
+                                            <Border Grid.Column="2" Background="Transparent" Padding="4,0" Margin="2,0,0,0" 
+                                                    Cursor="SizeAll" ToolTip="拖拽排序"
+                                                    MouseDown="CategoryDragHandle_MouseDown"
+                                                    MouseEnter="CategoryDragHandle_MouseEnter" 
+                                                    MouseLeave="CategoryDragHandle_MouseLeave">
+                                                <TextBlock x:Name="DragHandleIcon2" Text="⋮⋮" FontSize="10" Foreground="#6B7280" 
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
                                         </Grid>
                                     </Grid>
@@ -966,118 +997,318 @@
                         <Button x:Name="ImportModBtn" Content="📥 导入MOD" Style="{StaticResource GradientCornerButton}"/>
                     </StackPanel>
                 </Grid>
-                <ItemsControl x:Name="ModsGrid">
+                
+                <!-- C1区工具栏：视图切换 -->
+                <Border Background="#1A2433" CornerRadius="6" Padding="12,8" Margin="0,0,0,15" BorderBrush="#2A3441" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- 右侧：视图切换按钮 -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <TextBlock Text="视图:" Foreground="#94A3B8" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            
+                            <Button x:Name="CardViewBtn" Content="⊞" Background="Transparent" BorderThickness="1" 
+                                    BorderBrush="#00D4AA" Foreground="#00D4AA" Padding="6,3" Margin="0,0,4,0" 
+                                    FontSize="14" Cursor="Hand" ToolTip="卡片视图"
+                                    Click="CardViewBtn_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="#1A3332"/>
+                                        <Setter Property="BorderBrush" Value="#00D4AA"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#2A4443"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            
+                            <Button x:Name="ListViewBtn" Content="☰" Background="Transparent" BorderThickness="1" 
+                                    BorderBrush="#4A5568" Foreground="#F1F5F9" Padding="6,3" 
+                                    FontSize="14" Cursor="Hand" ToolTip="列表视图"
+                                    Click="ListViewBtn_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderBrush" Value="#4A5568"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#374151"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                
+                <!-- 卡片视图 - 直接使用主ScrollViewer，无需嵌套 -->
+                <ItemsControl x:Name="ModsCardView" Visibility="Visible">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal" Margin="-10"/>
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border x:Name="CardBorder" Width="240" Height="270" Margin="10" Background="#1A2433" 
-                                    CornerRadius="8" BorderBrush="#2A3441" BorderThickness="1" 
-                                    MouseDown="ModCard_MouseDown" Cursor="Hand">
-                                <!-- 添加右键菜单 -->
-                                <Border.ContextMenu>
-                                    <ContextMenu Style="{StaticResource DarkContextMenu}" Opened="ModContextMenu_Opened">
-                                        <MenuItem x:Name="EnableModMenuItem" Header="启用MOD" Click="EnableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="✅" FontSize="12" Foreground="#10B981"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                        <MenuItem x:Name="DisableModMenuItem" Header="禁用MOD" Click="DisableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="⏸️" FontSize="12" Foreground="#DC2626"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                        <Separator Style="{StaticResource DarkSeparator}"/>
-                                        <MenuItem Header="移动到分类" x:Name="MoveToCategoryMenuItem" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="📁" FontSize="12" Foreground="#FBBF24"/>
-                                            </MenuItem.Icon>
-                                            <!-- 动态子菜单将在代码中生成 -->
-                                        </MenuItem>
-                                        <Separator Style="{StaticResource DarkSeparator}"/>
-                                        <MenuItem Header="重命名" Click="RenameModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="✏️" FontSize="12" Foreground="#6B7280"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                        <MenuItem Header="修改预览图" Click="ChangePreviewMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="🖼️" FontSize="12" Foreground="#6B7280"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                        <Separator Style="{StaticResource DarkSeparator}"/>
-                                        <MenuItem Header="删除MOD" Click="DeleteModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
-                                            <MenuItem.Icon>
-                                                <TextBlock Text="🗑️" FontSize="12" Foreground="#DC2626"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                    </ContextMenu>
-                                </Border.ContextMenu>
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Effect" Value="{x:Null}"/>
-                                        <Setter Property="RenderTransform">
-                                            <Setter.Value>
-                                                <TranslateTransform Y="0"/>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <!-- 选中状态样式 -->
-                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="BorderBrush" Value="#10B981"/>
-                                                <Setter Property="BorderThickness" Value="2"/>
-                                                <Setter Property="Effect">
-                                                    <Setter.Value>
-                                                        <DropShadowEffect ShadowDepth="0" BlurRadius="15" Color="#10B981" Opacity="0.6"/>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </DataTrigger>
-                                            <!-- 鼠标悬停样式 -->
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="BorderBrush" Value="#FBBF24"/>
-                                                <Setter Property="Effect">
-                                                    <Setter.Value>
-                                                        <DropShadowEffect ShadowDepth="0" BlurRadius="15" Color="#FBBF24" Opacity="0.5"/>
-                                                    </Setter.Value>
-                                                </Setter>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                                                    <Border x:Name="CardBorder" Width="240" Height="270" Margin="10" Background="#1A2433" 
+                                        CornerRadius="8" BorderBrush="#2A3441" BorderThickness="1" 
+                                        MouseDown="ModCard_MouseDown" Cursor="Hand"
+                                        PreviewMouseWheel="Card_PreviewMouseWheel"
+                                        MouseWheel="Card_PreviewMouseWheel">
+                                        <!-- 添加右键菜单 -->
+                                        <Border.ContextMenu>
+                                            <ContextMenu Style="{StaticResource DarkContextMenu}" Opened="ModContextMenu_Opened">
+                                                <MenuItem x:Name="EnableModMenuItem" Header="启用MOD" Click="EnableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="✅" FontSize="12" Foreground="#10B981"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem x:Name="DisableModMenuItem" Header="禁用MOD" Click="DisableModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="⏸️" FontSize="12" Foreground="#DC2626"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <Separator Style="{StaticResource DarkSeparator}"/>
+                                                <MenuItem Header="移动到分类" x:Name="MoveToCategoryMenuItem" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="📁" FontSize="12" Foreground="#FBBF24"/>
+                                                    </MenuItem.Icon>
+                                                    <!-- 动态子菜单将在代码中生成 -->
+                                                </MenuItem>
+                                                <Separator Style="{StaticResource DarkSeparator}"/>
+                                                <MenuItem Header="编辑" Click="RenameModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="✏️" FontSize="12" Foreground="#6B7280"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="修改预览图" Click="ChangePreviewMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="🖼️" FontSize="12" Foreground="#6B7280"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <Separator Style="{StaticResource DarkSeparator}"/>
+                                                <MenuItem Header="删除MOD" Click="DeleteModMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="🗑️" FontSize="12" Foreground="#DC2626"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Effect" Value="{x:Null}"/>
                                                 <Setter Property="RenderTransform">
                                                     <Setter.Value>
-                                                        <TranslateTransform Y="-5"/>
+                                                        <TranslateTransform Y="0"/>
                                                     </Setter.Value>
                                                 </Setter>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    
-                                    <!-- 预览图区域 -->
-                                    <Border Grid.Row="0" Margin="4" CornerRadius="8" Background="#0F1B2E" ClipToBounds="True">
+                                                <Style.Triggers>
+                                                    <!-- 选中状态样式 -->
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#10B981"/>
+                                                        <Setter Property="BorderThickness" Value="2"/>
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect ShadowDepth="0" BlurRadius="15" Color="#10B981" Opacity="0.6"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                    <!-- 鼠标悬停样式 -->
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FBBF24"/>
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect ShadowDepth="0" BlurRadius="15" Color="#FBBF24" Opacity="0.5"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Setter Property="RenderTransform">
+                                                            <Setter.Value>
+                                                                <TranslateTransform Y="-5"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <Grid>
-                                            <!-- 预览图片 - 直接绑定到预加载的ImageSource -->
-                                            <Image x:Name="PreviewImage"
-                                                   Source="{Binding PreviewImageSource}" 
-                                                   Stretch="UniformToFill" 
-                                                   VerticalAlignment="Center" 
-                                                   HorizontalAlignment="Center"
-                                                   Visibility="{Binding PreviewImageSource, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
                                             
-                                            <!-- 图标占位符 - 在没有ImageSource时显示 -->
-                                            <Viewbox Visibility="{Binding PreviewImageSource, Converter={StaticResource InverseNullToVisibilityConverter}}">
-                                                <TextBlock Text="📦" FontSize="60" Foreground="#334155" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                            </Viewbox>
+                                            <!-- 预览图区域 -->
+                                            <Border Grid.Row="0" Margin="4" CornerRadius="8" Background="#0F1B2E" ClipToBounds="True">
+                                                <Grid>
+                                                    <!-- 预览图片 - 直接绑定到预加载的ImageSource -->
+                                                    <Image x:Name="PreviewImage"
+                                                           Source="{Binding PreviewImageSource}" 
+                                                           Stretch="UniformToFill" 
+                                                           VerticalAlignment="Center" 
+                                                           HorizontalAlignment="Center"
+                                                           Visibility="{Binding PreviewImageSource, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                                    
+                                                    <!-- 图标占位符 - 在没有ImageSource时显示 -->
+                                                    <Viewbox Visibility="{Binding PreviewImageSource, Converter={StaticResource InverseNullToVisibilityConverter}}">
+                                                        <TextBlock Text="📦" FontSize="60" Foreground="#334155" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                    </Viewbox>
+                                                </Grid>
+                                            </Border>
+                                            
+                                            <!-- 状态徽章 -->
+                                            <Border CornerRadius="8" Padding="10,5" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#6B7280"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                                <Setter Property="Background" Value="#10B981"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="Bold" Foreground="White"/>
+                                            </Border>
+                                            
+                                            <!-- 内容区域 -->
+                                            <StackPanel Grid.Row="1" Margin="15,12">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="White" FontSize="15" Margin="0,0,0,5"/>
+                                                <TextBlock Text="{Binding Description}" FontSize="12" Foreground="#9CA3AF" 
+                                                           TextWrapping="Wrap" Height="34" Margin="0,0,0,10"/>
+                                                <Grid>
+                                                    <!-- 类型标签 - 改为可点击切换 -->
+                                                    <Border Background="#40FBBF24" CornerRadius="8" Padding="6,3" HorizontalAlignment="Left" VerticalAlignment="Center" 
+                                                            Cursor="Hand" MouseDown="TypeTag_MouseDown" Tag="{Binding}">
+                                                        <TextBlock Text="{Binding Type}" FontSize="11" Foreground="#FBBF24" FontWeight="Medium"/>
+                                                    </Border>
+                                                    
+                                                    <!-- 操作按钮 -->
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                        <!-- 滑块开关 -->
+                                                        <Border x:Name="ModToggle" CornerRadius="8" 
+                                                               Height="16" Width="30" VerticalAlignment="Center" Cursor="Hand" 
+                                                               MouseDown="ModToggle_MouseDown" Tag="{Binding}" ToolTip="切换启用/禁用" Margin="0,0,4,0">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#4A5568"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                                            <Setter Property="Background" Value="#FBBF24"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Border x:Name="ToggleThumb" Background="White" CornerRadius="6" 
+                                                                   Height="12" Width="12" VerticalAlignment="Center" Margin="2,0,0,0">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                            </Border>
+                                                        </Border>
+                                                        
+                                                        <!-- 编辑按钮 - 铅笔图标 -->
+                                                        <Button Content="✏️" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
+                                                                Padding="4" FontSize="12" ToolTip="编辑MOD" Tag="{Binding}" Click="EditModButton_Click" Margin="0,0,2,0"/>
+                                                        
+                                                        <!-- 删除按钮 -->
+                                                        <Button Content="🗑" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
+                                                                Padding="4" FontSize="12" ToolTip="删除MOD" Tag="{Binding}" Click="DeleteModButton_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
-                                    
-                                    <!-- 状态徽章 -->
-                                    <Border CornerRadius="8" Padding="10,5" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12">
+                                </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                
+                <!-- 列表视图 -->
+                <ListView x:Name="ModsListView" Background="Transparent" BorderThickness="0" Visibility="Collapsed"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.PanningMode="VerticalOnly" ScrollViewer.CanContentScroll="False"
+                          PreviewMouseWheel="ModsListView_PreviewMouseWheel"
+                          SelectionMode="Extended">
+                    
+                    <!-- 列表视图样式 -->
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0,0,0,1"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListViewItem">
+                                        <Border x:Name="Border" Background="{TemplateBinding Background}" 
+                                                BorderBrush="#2A3441" BorderThickness="0,0,0,1" Padding="0,8">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Border" Property="Background" Value="#1E2A3A"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Border" Property="Background" Value="#1A3332"/>
+                                                <Setter TargetName="Border" Property="BorderBrush" Value="#10B981"/>
+                                                <Setter TargetName="Border" Property="BorderThickness" Value="0,0,0,2"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    
+                    <!-- 列表视图模板 -->
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Height="60" Margin="15,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="60"/>  <!-- 缩略图 -->
+                                    <ColumnDefinition Width="*"/>   <!-- 名称 -->
+                                    <ColumnDefinition Width="120"/> <!-- 状态 -->
+                                    <ColumnDefinition Width="120"/> <!-- 日期 -->
+                                    <ColumnDefinition Width="100"/> <!-- 大小 -->
+                                    <ColumnDefinition Width="80"/>  <!-- 操作 -->
+                                </Grid.ColumnDefinitions>
+                                
+                                <!-- 缩略图 -->
+                                <Border Grid.Column="0" Width="50" Height="50" Background="#0F1B2E" CornerRadius="6" 
+                                        Margin="0,5" ClipToBounds="True" Cursor="Hand" MouseDown="ModCard_MouseDown" Tag="{Binding}">
+                                    <Grid>
+                                        <Image Source="{Binding PreviewImageSource}" 
+                                               Stretch="UniformToFill" 
+                                               Visibility="{Binding PreviewImageSource, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                        <TextBlock Text="📦" FontSize="20" Foreground="#334155" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                   Visibility="{Binding PreviewImageSource, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+                                    </Grid>
+                                </Border>
+                                
+                                <!-- 名称和描述 -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="15,0">
+                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="White" FontSize="14" 
+                                               TextTrimming="CharacterEllipsis" MaxWidth="250"/>
+                                    <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#9CA3AF" 
+                                               TextTrimming="CharacterEllipsis" MaxWidth="250" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                
+                                <!-- 状态 -->
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal">
+                                    <Border CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="Background" Value="#6B7280"/>
@@ -1088,67 +1319,61 @@
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="Bold" Foreground="White"/>
+                                        <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                    </Border>
+                                </StackPanel>
+                                
+                                <!-- 导入日期 -->
+                                <TextBlock Grid.Column="3" Text="{Binding ImportDate}" Foreground="#94A3B8" FontSize="12" 
+                                           VerticalAlignment="Center"/>
+                                
+                                <!-- 文件大小 -->
+                                <TextBlock Grid.Column="4" Text="{Binding Size}" Foreground="#FFD700" FontSize="12" FontWeight="500"
+                                           VerticalAlignment="Center"/>
+                                
+                                <!-- 操作按钮 -->
+                                <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <!-- 滑块开关 -->
+                                    <Border x:Name="ModToggle" CornerRadius="6" 
+                                           Height="14" Width="26" VerticalAlignment="Center" Cursor="Hand" 
+                                           MouseDown="ModToggle_MouseDown" Tag="{Binding}" ToolTip="切换启用/禁用" Margin="0,0,6,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#4A5568"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                        <Setter Property="Background" Value="#FBBF24"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border x:Name="ToggleThumb" Background="White" CornerRadius="5" 
+                                               Height="10" Width="10" VerticalAlignment="Center" Margin="2,0,0,0">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Status}" Value="已启用">
+                                                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
                                     </Border>
                                     
-                                    <!-- 内容区域 -->
-                                    <StackPanel Grid.Row="1" Margin="15,12">
-                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="White" FontSize="15" Margin="0,0,0,5"/>
-                                        <TextBlock Text="{Binding Description}" FontSize="12" Foreground="#9CA3AF" 
-                                                   TextWrapping="Wrap" Height="34" Margin="0,0,0,10"/>
-                                        <Grid>
-                                            <!-- 类型标签 - 改为可点击切换 -->
-                                            <Border Background="#40FBBF24" CornerRadius="8" Padding="6,3" HorizontalAlignment="Left" VerticalAlignment="Center" 
-                                                    Cursor="Hand" MouseDown="TypeTag_MouseDown" Tag="{Binding}">
-                                                <TextBlock Text="{Binding Type}" FontSize="11" Foreground="#FBBF24" FontWeight="Medium"/>
-                                            </Border>
-                                            
-                                            <!-- 操作按钮 -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <!-- 滑块开关 -->
-                                                <Border x:Name="ModToggle" CornerRadius="8" 
-                                                       Height="16" Width="30" VerticalAlignment="Center" Cursor="Hand" 
-                                                       MouseDown="ModToggle_MouseDown" Tag="{Binding}" ToolTip="切换启用/禁用" Margin="0,0,4,0">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="#4A5568"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Status}" Value="已启用">
-                                                                    <Setter Property="Background" Value="#FBBF24"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <Border x:Name="ToggleThumb" Background="White" CornerRadius="6" 
-                                                           Height="12" Width="12" VerticalAlignment="Center" Margin="2,0,0,0">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="HorizontalAlignment" Value="Left"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Status}" Value="已启用">
-                                                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                    </Border>
-                                                </Border>
-                                                
-                                                <!-- 编辑按钮 - 铅笔图标 -->
-                                                <Button Content="✏️" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
-                                                        Padding="4" FontSize="12" ToolTip="编辑MOD" Tag="{Binding}" Click="EditModButton_Click" Margin="0,0,2,0"/>
-                                                
-                                                <!-- 删除按钮 -->
-                                                <Button Content="🗑" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
-                                                        Padding="4" FontSize="12" ToolTip="删除MOD" Tag="{Binding}" Click="DeleteModButton_Click"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
+                                    <!-- 编辑按钮 -->
+                                    <Button Content="✏️" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
+                                            Padding="3" FontSize="11" ToolTip="编辑MOD" Tag="{Binding}" Click="EditModButton_Click" Margin="0,0,2,0"/>
+                                    
+                                    <!-- 删除按钮 -->
+                                    <Button Content="🗑" Background="Transparent" BorderThickness="0" Foreground="#9CA3AF" 
+                                            Padding="3" FontSize="11" ToolTip="删除MOD" Tag="{Binding}" Click="DeleteModButton_Click"/>
+                                </StackPanel>
+                            </Grid>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ListView.ItemTemplate>
+                </ListView>
             </StackPanel>
         </ScrollViewer>
         
@@ -1175,7 +1400,8 @@
                             </Border>
                         </Grid>
                     </Border>
-                    <Border Height="200" CornerRadius="12" Background="#0B1426" Margin="0,0,0,20" BorderBrush="#1A2332" BorderThickness="1" ClipToBounds="True">
+                    <Border Height="200" CornerRadius="12" Background="#0B1426" Margin="0,0,0,20" BorderBrush="#1A2332" BorderThickness="1" ClipToBounds="True"
+                            MouseDown="ModDetailPreviewImage_MouseDown">
                         <Grid>
                             <!-- 预览图片 -->
                             <Image x:Name="ModDetailPreviewImage" 
@@ -1183,10 +1409,26 @@
                                    VerticalAlignment="Center" 
                                    HorizontalAlignment="Center"/>
                             
-                            <!-- 图标占位符 - 只在没有预览图时显示 -->
-                            <Viewbox x:Name="ModDetailIconContainer" Visibility="Collapsed">
-                                <TextBlock x:Name="ModDetailIcon" Text="👕" FontSize="60" Foreground="#334155"/>
+                            <!-- 无预览图时的提示区域 -->
+                            <Border x:Name="PreviewPlaceholder" Background="Transparent" Cursor="Hand">
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <!-- 图标占位符 -->
+                                    <Viewbox x:Name="ModDetailIconContainer" Height="60" Width="60" Margin="0,0,0,10">
+                                        <TextBlock x:Name="ModDetailIcon" Text="📷" FontSize="60" Foreground="#334155"/>
                             </Viewbox>
+                                    
+                                    <!-- 提示文字 -->
+                                    <TextBlock Text="请上传图片，建议比例1:1或16:9" 
+                                               Foreground="#6B7280" FontSize="14" 
+                                               TextAlignment="Center" TextWrapping="Wrap" 
+                                               Margin="10,0,10,0"/>
+                                    
+                                    <TextBlock Text="点击此处导入预览图" 
+                                               Foreground="#4B5563" FontSize="12" 
+                                               TextAlignment="Center" TextWrapping="Wrap" 
+                                               Margin="10,5,10,0"/>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Border>
                     <Border Background="#0B1426" CornerRadius="8" Padding="20" Margin="0,0,0,20">
@@ -1209,22 +1451,22 @@
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                <TextBlock Text="描述:" Width="100" Foreground="#94A3B8" VerticalAlignment="Top"/>
+                                <TextBlock Text="描述:" Width="80" Foreground="#94A3B8" VerticalAlignment="Top"/>
                                 <TextBlock x:Name="ModDescriptionText" Text="请选择一个MOD查看详情" 
-                                           Foreground="#F1F5F9" TextWrapping="Wrap" Width="180"/>
+                                           Foreground="#F1F5F9" TextWrapping="Wrap" Width="200"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
                     <!-- 操作按钮 - 恢复为2x2栅格布局，并修复文字折叠问题 -->
                     <UniformGrid Columns="2" Rows="2" Margin="0,0,0,20">
                         <Button MinHeight="48" BorderBrush="#2A3441" BorderThickness="1" Padding="8,4" Margin="4"
-                                Click="RenameModButton_Click" ToolTip="修改MOD名称">
+                                Click="RenameModButton_Click" ToolTip="编辑MOD信息">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border Background="#1A2433" BorderBrush="{TemplateBinding BorderBrush}" 
                                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" 
                                             Padding="{TemplateBinding Padding}">
-                                        <TextBlock Text="✏️ 重命名" Foreground="#F1F5F9" FontSize="13"
+                                        <TextBlock Text="✏️ 编辑" Foreground="#F1F5F9" FontSize="13"
                                                    TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                 </ControlTemplate>
@@ -1298,6 +1540,8 @@
                     <TextBlock Text="支持捐赠" Foreground="#10B981" FontSize="12" Cursor="Hand" 
                                MouseEnter="DonationText_MouseEnter" MouseLeave="DonationText_MouseLeave"
                                MouseDown="DonationText_MouseDown"/>
+                    <TextBlock Text="如果对你有帮助，可以请我喝一杯蜜雪冰城" Foreground="#94A3B8" FontSize="11" Margin="10,0,0,0" 
+                               VerticalAlignment="Center" Visibility="Collapsed" x:Name="DonationHintText"/>
                 </StackPanel>
             </Grid>
         </Border>

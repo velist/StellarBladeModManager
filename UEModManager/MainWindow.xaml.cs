@@ -57,6 +57,14 @@ namespace UEModManager
         private ModService? _modService;
         private ILogger<MainWindow>? _logger;
 
+        // 搜索防抖计时器
+        private DispatcherTimer? searchDebounceTimer;
+
+        // 分类拖拽相关字段
+        private bool _isDragging = false;
+        private object? _draggedCategory = null;
+        private Point _startPoint;
+
         // 主构造函数
         public MainWindow()
         {
@@ -274,7 +282,8 @@ namespace UEModManager
             CategoryList.SelectedIndex = 0;
 
             // 显示MOD列表（初始为空）
-            ModsGrid.ItemsSource = allMods;
+            ModsCardView.ItemsSource = allMods;
+            ModsListView.ItemsSource = allMods;
 
             // 清空详情面板
             ClearModDetails();
@@ -1176,7 +1185,8 @@ namespace UEModManager
                 }
                 
                 // 清空UI数据源
-                ModsGrid.ItemsSource = null;
+                ModsCardView.ItemsSource = null;
+                ModsListView.ItemsSource = null;
                 
                 // 强制多次垃圾回收，确保释放文件锁定
                 for (int i = 0; i < 3; i++)
@@ -1186,7 +1196,8 @@ namespace UEModManager
                 }
                 
                 // 强制界面更新
-                ModsGrid.UpdateLayout();
+                ModsCardView.UpdateLayout();
+                ModsListView.UpdateLayout();
                 
                 // 获取过滤后的MOD列表
                 var filteredMods = GetFilteredMods();
@@ -1201,10 +1212,12 @@ namespace UEModManager
                 }
                 
                 // 重新设置数据源为过滤后的数据
-                ModsGrid.ItemsSource = filteredMods;
+                ModsCardView.ItemsSource = filteredMods;
+                ModsListView.ItemsSource = filteredMods;
                 
                 // 强制重新绘制
-                ModsGrid.InvalidateVisual();
+                ModsCardView.InvalidateVisual();
+                ModsListView.InvalidateVisual();
                 
                 UpdateModCountDisplay();
                 
@@ -2409,8 +2422,10 @@ namespace UEModManager
         private void FilterModsByStatus(string status)
         {
             var filteredMods = allMods.Where(m => m.Status == status).ToList();
-            ModsGrid.ItemsSource = null;
-            ModsGrid.ItemsSource = filteredMods;
+            ModsCardView.ItemsSource = null;
+            ModsListView.ItemsSource = null;
+            ModsCardView.ItemsSource = filteredMods;
+            ModsListView.ItemsSource = filteredMods;
             
             // 更新标题显示
             if (ModCountText != null)
@@ -2584,19 +2599,6 @@ namespace UEModManager
         // === 右键菜单事件处理 ===
         
         // 分类右键菜单
-        private void AddSubCategoryMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            var categoryName = ShowInputDialog("请输入子分类名称:", "新增子分类");
-            if (!string.IsNullOrEmpty(categoryName))
-            {
-                var selectedCategory = CategoryList.SelectedItem as Category;
-                var parentName = selectedCategory?.Name ?? "全部";
-                var fullName = parentName == "全部" ? categoryName : $"{parentName} > {categoryName}";
-                
-                categories.Add(new Category { Name = fullName, Count = 0 });
-                RefreshCategoryDisplay();
-            }
-        }
 
         private void RenameCategoryMenuItem_Click(object sender, RoutedEventArgs e)
         {
@@ -2824,7 +2826,9 @@ namespace UEModManager
             {
                 if (e.RightButton == MouseButtonState.Pressed) return;
 
-                var visibleMods = (ModsGrid.ItemsSource as IEnumerable<Mod>)?.ToList();
+                var visibleMods = (ModsCardView.Visibility == Visibility.Visible ? 
+                    ModsCardView.ItemsSource as IEnumerable<Mod> : 
+                    ModsListView.ItemsSource as IEnumerable<Mod>)?.ToList();
                 if (visibleMods == null || !visibleMods.Contains(clickedMod)) return;
 
                 // Handle Shift-click for range selection
@@ -3063,7 +3067,18 @@ namespace UEModManager
         {
             try
             {
-                var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
+                IEnumerable<Mod>? currentMods = null;
+                
+                // 根据当前视图选择正确的控件
+                if (ModsCardView.Visibility == Visibility.Visible)
+                {
+                    currentMods = ModsCardView.ItemsSource as IEnumerable<Mod>;
+                }
+                else
+                {
+                    currentMods = ModsListView.ItemsSource as IEnumerable<Mod>;
+                }
+                
                 if (currentMods != null && currentMods.Any())
                 {
                     bool allSelected = currentMods.All(m => m.IsSelected);
@@ -3221,8 +3236,16 @@ namespace UEModManager
                     }
                     
                     // 强制刷新MOD列表显示（仅刷新UI，不重新加载数据）
-                    ModsGrid.InvalidateVisual();
-                    ModsGrid.UpdateLayout();
+                    if (ModsCardView.Visibility == Visibility.Visible)
+                    {
+                        ModsCardView.InvalidateVisual();
+                        ModsCardView.UpdateLayout();
+                    }
+                    else
+                    {
+                        ModsListView.InvalidateVisual();
+                        ModsListView.UpdateLayout();
+                    }
                     
                     Console.WriteLine($"[DEBUG] UI强制更新完成");
                 });
@@ -4454,60 +4477,53 @@ namespace UEModManager
         {
             try
             {
-                if (ModCountText != null)
+                var filteredMods = GetFilteredMods();
+                int totalCount = allMods.Count;
+                int filteredCount = filteredMods.Count;
+                int selectedCount = 0;
+                
+                // 获取当前视图中的选中项数量
+                IEnumerable<Mod>? currentMods = null;
+                if (ModsCardView.Visibility == Visibility.Visible)
                 {
-                    var selectedItem = CategoryList?.SelectedItem;
-                    string categoryName = isEnglishMode ? "All" : "全部";
-                    
-                    if (selectedItem is Category category)
-                    {
-                        categoryName = category.Name;
-                    }
-                    else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
-                    {
-                        categoryName = categoryItem.Name;
-                    }
-                    
-                    // 获取当前显示的MOD数量（考虑搜索和分类筛选结果）
-                    var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
-                    var modCount = currentMods?.Count() ?? 0;
-                    
-                    // 检查是否有搜索关键词
-                    var searchText = SearchBox?.Text?.Trim();
-                    var hasSearchFilter = !string.IsNullOrEmpty(searchText);
-                    
-                    // 格式化显示文本，根据语言模式和筛选状态
-                    string displayText;
-                    if (isEnglishMode)
-                    {
-                        if (hasSearchFilter)
-                        {
-                            displayText = $"Search Results in {categoryName} ({modCount})";
-                        }
-                        else
-                        {
-                            displayText = $"{categoryName} MODs ({modCount})";
-                        }
-                    }
-                    else
-                    {
-                        if (hasSearchFilter)
-                        {
-                            displayText = $"{categoryName} 搜索结果 ({modCount})";
-                        }
-                        else
-                        {
-                            displayText = $"{categoryName} MOD ({modCount})";
-                        }
-                    }
-                    
-                    ModCountText.Text = displayText;
-                    Console.WriteLine($"[DEBUG] 更新C1区标题: {displayText}，搜索词: '{searchText}'");
+                    currentMods = ModsCardView.ItemsSource as IEnumerable<Mod>;
                 }
+                else
+                {
+                    currentMods = ModsListView.ItemsSource as IEnumerable<Mod>;
+                }
+                
+                if (currentMods != null)
+                {
+                    selectedCount = currentMods.Count(m => m.IsSelected);
+                }
+                
+                // 更新显示文本
+                string countText = "";
+                if (selectedCount > 0)
+                {
+                    countText = isEnglishMode 
+                        ? $"MODs ({selectedCount} selected / {filteredCount} filtered / {totalCount} total)"
+                        : $"全部 MOD (已选择 {selectedCount} / 筛选 {filteredCount} / 总计 {totalCount})";
+                }
+                else if (filteredCount != totalCount)
+                {
+                    countText = isEnglishMode 
+                        ? $"MODs ({filteredCount} filtered / {totalCount} total)"
+                        : $"全部 MOD (筛选 {filteredCount} / 总计 {totalCount})";
+                }
+                else
+                {
+                    countText = isEnglishMode 
+                        ? $"All MODs ({totalCount})"
+                        : $"全部 MOD ({totalCount})";
+                }
+                
+                ModCountText.Text = countText;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"更新MOD数量显示失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 更新MOD计数显示失败: {ex.Message}");
             }
         }
 
@@ -4830,53 +4846,18 @@ namespace UEModManager
         {
             try
             {
-                if (CategoryList.SelectedItem == null)
-                {
-                    // 没有选中分类，显示所有MOD
-                    ModsGrid.ItemsSource = allMods;
-                    Console.WriteLine($"[DEBUG] 未选中分类，显示所有MOD: {allMods.Count} 个");
-                    return;
-                }
-
-                var selectedItem = CategoryList.SelectedItem;
-                List<Mod> filteredMods = new List<Mod>();
-
-                if (selectedItem is Category category)
-                {
-                    // 处理默认分类
-                    switch (category.Name)
-                    {
-                        case "全部":
-                            filteredMods = allMods.ToList();
-                            break;
-                        default:
-                            // 其他分类，基于MOD的Type筛选
-                            filteredMods = allMods.Where(m => m.Type == category.Name || 
-                                (m.Categories != null && m.Categories.Contains(category.Name))).ToList();
-                            break;
-                    }
-                }
-                else if (selectedItem is UEModManager.Core.Models.CategoryItem categoryItem)
-                {
-                    // 处理CategoryService分类
-                    if (categoryItem.Name == "全部")
-                    {
-                        filteredMods = allMods.ToList();
-                    }
-                    else
-                    {
-                        // 根据MOD的分类属性筛选
-                        filteredMods = allMods.Where(m => m.Categories.Contains(categoryItem.Name)).ToList();
-                        Console.WriteLine($"[DEBUG] 选中分类 '{categoryItem.Name}'，找到 {filteredMods.Count} 个MOD");
-                    }
-                }
-
-                ModsGrid.ItemsSource = filteredMods;
-                Console.WriteLine($"[DEBUG] 按分类筛选MOD完成，显示 {filteredMods.Count} 个MOD");
+                var filteredMods = GetFilteredMods();
+                
+                // 应用到两个视图上
+                ModsCardView.ItemsSource = filteredMods;
+                ModsListView.ItemsSource = filteredMods;
+                
+                // 更新MOD计数显示
+                UpdateModCountDisplay();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"按分类筛选MOD失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 按分类筛选MOD失败: {ex.Message}");
             }
         }
 
@@ -4885,27 +4866,31 @@ namespace UEModManager
         {
             try
             {
-                var searchBox = sender as TextBox;
-                
-                // 控制占位符显示/隐藏
-                if (SearchPlaceholder != null)
+                // 延迟执行搜索，防止频繁刷新UI
+                if (searchDebounceTimer != null)
                 {
-                    if (string.IsNullOrWhiteSpace(searchBox?.Text))
-                    {
-                        SearchPlaceholder.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        SearchPlaceholder.Visibility = Visibility.Collapsed;
-                    }
+                    searchDebounceTimer.Stop();
                 }
-                
-                // 实时更新搜索结果
-                RefreshModDisplay();
+                else
+                {
+                    searchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                    searchDebounceTimer.Tick += (s, args) =>
+                    {
+                        searchDebounceTimer.Stop();
+                        var filteredMods = GetFilteredMods();
+                        
+                        // 应用到两个视图上
+                        ModsCardView.ItemsSource = filteredMods;
+                        ModsListView.ItemsSource = filteredMods;
+                        
+                        UpdateModCountDisplay();
+                    };
+                }
+                searchDebounceTimer.Start();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"搜索文本变化处理失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 搜索框文本更改处理失败: {ex.Message}");
             }
         }
         
@@ -4942,19 +4927,31 @@ namespace UEModManager
         {
             try
             {
-                var currentMods = ModsGrid.ItemsSource as IEnumerable<Mod>;
+                // 获取当前视图的Mods
+                IEnumerable<Mod>? currentMods = null;
+                if (ModsCardView.Visibility == Visibility.Visible)
+                {
+                    currentMods = ModsCardView.ItemsSource as IEnumerable<Mod>;
+                }
+                else
+                {
+                    currentMods = ModsListView.ItemsSource as IEnumerable<Mod>;
+                }
+                
                 if (currentMods != null)
                 {
                     foreach (var mod in currentMods)
                     {
                         mod.IsSelected = isSelected;
                     }
-                    Console.WriteLine($"[DEBUG] 设置 {currentMods.Count()} 个MOD的选中状态为: {isSelected}");
+                    
+                    // 更新计数显示
+                    UpdateModCountDisplay();
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"设置MOD选中状态失败: {ex.Message}");
+                Console.WriteLine($"[ERROR] 设置所有MOD选择状态失败: {ex.Message}");
             }
         }
 
@@ -5860,7 +5857,7 @@ namespace UEModManager
         /// <summary>
         /// 窗口关闭事件处理
         /// </summary>
-        private async void MainWindow_Closing(object? sender, CancelEventArgs e)
+        private void MainWindow_Closing(object? sender, CancelEventArgs e)
         {
             try
             {
@@ -5868,8 +5865,8 @@ namespace UEModManager
                 if (_categoryService != null && !string.IsNullOrEmpty(currentGameName))
                 {
                     Console.WriteLine("[DEBUG] 保存分类数据...");
-                    // CategoryService会在SetCurrentGameAsync中自动保存，这里我们手动触发一次保存
-                    await _categoryService.SetCurrentGameAsync(currentGameName);
+                    // 同步等待保存完成，避免程序在此处退出
+                    _categoryService.SetCurrentGameAsync(currentGameName).GetAwaiter().GetResult();
                 }
                 
                 Console.WriteLine("[DEBUG] 程序正常退出");
@@ -6114,6 +6111,12 @@ namespace UEModManager
                 var textBlock = sender as TextBlock;
                 if (textBlock != null && donationPopup == null)
                 {
+                    // 显示提示文字
+                    if (DonationHintText != null)
+                    {
+                        DonationHintText.Visibility = Visibility.Visible;
+                    }
+                    
                     // 创建弹出窗口显示捐赠二维码
                     donationPopup = new Popup
                     {
@@ -6217,6 +6220,12 @@ namespace UEModManager
                 {
                     donationPopup.IsOpen = false;
                     donationPopup = null;
+                }
+                
+                // 隐藏提示文字
+                if (DonationHintText != null)
+                {
+                    DonationHintText.Visibility = Visibility.Collapsed;
                 }
             }
             catch (Exception ex)
@@ -6502,15 +6511,24 @@ namespace UEModManager
         // 让B1区分类列表支持鼠标滚轮滚动
         private void CategoryList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            // 查找外层ScrollViewer
-            var scrollViewer = FindParent<ScrollViewer>(CategoryList);
-            if (scrollViewer != null)
+            try
             {
-                if (e.Delta != 0)
+                // 查找外层ScrollViewer
+                var scrollViewer = FindParent<ScrollViewer>(CategoryList);
+                if (scrollViewer != null && e.Delta != 0)
                 {
+                    // 仅滚动B1区自己的内容，不影响C1区
                     scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+                    
+                    // 标记事件已处理，防止冒泡到父级容器
                     e.Handled = true;
+                    
+                    Console.WriteLine("[DEBUG] B1区滚轮滚动");
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] B1区滚轮事件处理失败: {ex.Message}");
             }
         }
 
@@ -6571,6 +6589,253 @@ namespace UEModManager
         private void OperationButton_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
+        }
+        
+        // === 分类拖拽排序功能 ===
+        
+        /// <summary>
+        /// 拖拽手柄鼠标按下事件
+        /// </summary>
+        private void CategoryDragHandle_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                if (e.LeftButton == MouseButtonState.Pressed && sender is Border border)
+                {
+                    // 获取对应的分类项
+                    var listBoxItem = FindParent<ListBoxItem>(border);
+                    if (listBoxItem?.DataContext != null)
+                    {
+                        _draggedCategory = listBoxItem.DataContext;
+                        _startPoint = e.GetPosition(CategoryList);
+                        _isDragging = true;
+                        
+                        // 捕获鼠标，开始拖拽
+                        border.CaptureMouse();
+                        
+                        Console.WriteLine($"[DEBUG] 开始拖拽分类: {GetCategoryName(_draggedCategory)}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"拖拽手柄鼠标按下处理失败: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 拖拽手柄鼠标进入事件 - 显示拖拽提示
+        /// </summary>
+        private void CategoryDragHandle_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (sender is Border border && border.Child is TextBlock textBlock)
+            {
+                // 改变图标颜色为高亮状态
+                textBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+            }
+        }
+        
+        /// <summary>
+        /// 拖拽手柄鼠标离开事件 - 恢复正常状态
+        /// </summary>
+        private void CategoryDragHandle_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (!_isDragging && sender is Border border && border.Child is TextBlock textBlock)
+            {
+                // 恢复图标颜色为正常状态
+                textBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6B7280"));
+            }
+        }
+        
+        /// <summary>
+        /// 获取分类名称用于显示
+        /// </summary>
+        private string GetCategoryName(object categoryObj)
+        {
+            return categoryObj switch
+            {
+                Category category => category.Name ?? "",
+                UEModManager.Core.Models.CategoryItem categoryItem => categoryItem.Name ?? "",
+                _ => ""
+            };
+        }
+        
+        /// <summary>
+        /// 获取指定位置的分类项
+        /// </summary>
+        private object? GetCategoryItemAtPosition(Point position)
+        {
+            var element = CategoryList.InputHitTest(position) as DependencyObject;
+            while (element != null)
+            {
+                if (element is ListBoxItem listBoxItem)
+                {
+                    return listBoxItem.DataContext;
+                }
+                element = VisualTreeHelper.GetParent(element);
+            }
+            return null;
+        }
+        
+        /// <summary>
+        /// 重新排序分类项
+        /// </summary>
+        private void ReorderCategories(object draggedCategory, object targetCategory)
+        {
+            try
+            {
+                if (CategoryList?.ItemsSource is ObservableCollection<object> categories)
+                {
+                    int draggedIndex = categories.IndexOf(draggedCategory);
+                    int targetIndex = categories.IndexOf(targetCategory);
+                    
+                    if (draggedIndex != -1 && targetIndex != -1 && draggedIndex != targetIndex)
+                    {
+                        // 移除拖拽的项目
+                        categories.RemoveAt(draggedIndex);
+                        
+                        // 重新计算目标索引（因为移除了一个项目）
+                        if (draggedIndex < targetIndex)
+                        {
+                            targetIndex--;
+                        }
+                        
+                        // 在目标位置插入
+                        categories.Insert(targetIndex, draggedCategory);
+                        
+                        // 保持选中状态
+                        CategoryList.SelectedItem = draggedCategory;
+                        
+                        Console.WriteLine($"[DEBUG] 分类重新排序: {GetCategoryName(draggedCategory)} 移动到 {GetCategoryName(targetCategory)} 位置");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"重新排序分类失败: {ex.Message}");
+            }
+        }
+
+        // Window加载事件
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            // 初始化配置
+            LoadConfiguration();
+            
+            // 初始化服务
+            InitializeServices();
+            
+            // 检查和恢复游戏配置
+            CheckAndRestoreGameConfiguration();
+        }
+        
+        // 添加视图切换事件处理程序
+        private void CardViewBtn_Click(object sender, RoutedEventArgs e)
+        {
+            ModsCardView.Visibility = Visibility.Visible;
+            ModsListView.Visibility = Visibility.Collapsed;
+            
+            // 更新按钮样式
+            CardViewBtn.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+            CardViewBtn.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+            CardViewBtn.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A3332"));
+            
+            ListViewBtn.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+            ListViewBtn.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9"));
+            ListViewBtn.Background = Brushes.Transparent;
+        }
+        
+        private void ListViewBtn_Click(object sender, RoutedEventArgs e)
+        {
+            ModsCardView.Visibility = Visibility.Collapsed;
+            ModsListView.Visibility = Visibility.Visible;
+            
+            // 更新按钮样式
+            ListViewBtn.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+            ListViewBtn.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+            ListViewBtn.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A3332"));
+            
+            CardViewBtn.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A5568"));
+            CardViewBtn.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9"));
+            CardViewBtn.Background = Brushes.Transparent;
+        }
+        
+        // 预览图区域点击事件
+        private void ModDetailPreviewImage_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (selectedMod != null)
+            {
+                ChangePreviewForMod(selectedMod);
+            }
+        }
+        
+        // 分类列表鼠标移动事件 - 用于拖拽
+        private void CategoryList_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_isDragging && e.LeftButton == MouseButtonState.Pressed && _draggedCategory != null)
+            {
+                Point currentPosition = e.GetPosition(CategoryList);
+                
+                // 检查鼠标是否移动了足够的距离
+                Vector diff = _startPoint - currentPosition;
+                if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    // 获取鼠标位置下的目标分类
+                    var targetCategory = GetCategoryItemAtPosition(currentPosition);
+                    if (targetCategory != null && targetCategory != _draggedCategory)
+                    {
+                        // 重新排序
+                        ReorderCategories(_draggedCategory, targetCategory);
+                    }
+                }
+            }
+        }
+        
+        // 分类列表鼠标释放事件 - 结束拖拽
+        private void CategoryList_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_isDragging)
+            {
+                // 释放鼠标捕获
+                if (e.OriginalSource is DependencyObject depObj)
+                {
+                    var border = FindParent<Border>(depObj);
+                    border?.ReleaseMouseCapture();
+                }
+                
+                // 重置拖拽状态
+                _isDragging = false;
+                _draggedCategory = null;
+                
+                Console.WriteLine("[DEBUG] 拖拽分类结束");
+            }
+        }
+        
+        // 列表视图滚轮事件处理
+        private void ModsListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            try
+            {
+                var scrollViewer = FindParent<ScrollViewer>(ModsListView);
+                if (scrollViewer != null && e.Delta != 0)
+                {
+                    scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+                    e.Handled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 列表视图滚轮事件处理失败: {ex.Message}");
+            }
+        }
+
+
+
+        private void Card_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            // 现在卡片视图直接使用主ScrollViewer，不需要特殊处理
+            // 让事件正常冒泡到主ScrollViewer即可
         }
     }
 
