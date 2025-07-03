@@ -42,6 +42,7 @@ namespace UEModManager
         private List<Mod> allMods = new List<Mod>();
         private ObservableCollection<Category> categories = new ObservableCollection<Category>();
         private Mod? _lastSelectedMod; // 用于Shift多选
+        private Point _startPoint;
         private string currentGamePath = "";
         private string currentModPath = "";
         private string currentBackupPath = "";
@@ -62,8 +63,10 @@ namespace UEModManager
 
         // 分类拖拽相关字段
         private bool _isDragging = false;
-        private object? _draggedCategory = null;
-        private Point _startPoint;
+
+        // 添加全局Popup跟踪变量
+
+       
 
         // 主构造函数
         public MainWindow()
@@ -83,9 +86,7 @@ namespace UEModManager
             SetupEventHandlers();
             
             // 改为窗口加载完成后立即同步检查配置
-            this.Loaded += (s, e) => {
-                CheckAndRestoreGameConfiguration();
-            };
+            this.Loaded += MainWindow_Loaded;
             
             // 添加关闭事件处理，保存分类数据
             this.Closing += MainWindow_Closing;
@@ -94,8 +95,24 @@ namespace UEModManager
 
             // 分类列表初始化绑定
             CategoryList.ItemsSource = categories;
+            CategoryList.Drop += CategoryList_Drop;
+            CategoryList.DragOver += CategoryList_DragOver;
             
             // Console.WriteLine("MainWindow 初始化完成");
+            categories.Add(new Category { Name = "测试分类", Count = 99 });
+
+            // 强制用代码设置ItemTemplate为红底白字TEST
+            var template = new DataTemplate();
+            var factory = new FrameworkElementFactory(typeof(Border));
+            factory.SetValue(Border.BackgroundProperty, System.Windows.Media.Brushes.Red);
+            factory.SetValue(Border.PaddingProperty, new System.Windows.Thickness(10));
+            var textFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.TextBlock));
+            textFactory.SetValue(System.Windows.Controls.TextBlock.TextProperty, "TEST");
+            textFactory.SetValue(System.Windows.Controls.TextBlock.FontSizeProperty, 30.0);
+            textFactory.SetValue(System.Windows.Controls.TextBlock.ForegroundProperty, System.Windows.Media.Brushes.White);
+            factory.AppendChild(textFactory);
+            template.VisualTree = factory;
+            CategoryList.ItemTemplate = template;
         }
 
         // Win32 API 用于分配控制台窗口
@@ -2450,63 +2467,46 @@ namespace UEModManager
         {
             try
             {
-                // 使用Popup而不是ContextMenu来避免立即关闭问题
-                var popup = new Popup
+                // 先关闭已存在的弹窗
+                CloseCurrentTypeSelectionPopup();
+
+                // 创建ContextMenu并设置更精确的样式，防止白色背景溢出
+                var contextMenu = new ContextMenu
                 {
                     PlacementTarget = element,
                     Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
-                    AllowsTransparency = true,
-                    PopupAnimation = PopupAnimation.Fade,
-                    StaysOpen = true  // 改为true，手动控制关闭
-                };
-
-                var border = new Border
-                {
-                    Background = new SolidColorBrush(Color.FromRgb(42, 52, 65)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
+                    HorizontalOffset = 0, // 确保水平位置精确对齐
+                    VerticalOffset = 2,   // 小幅垂直偏移避免重叠
+                    StaysOpen = false,    // 允许自动关闭
+                    Background = new SolidColorBrush(Color.FromRgb(42, 52, 65)), // 深色背景
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(75, 85, 99)), // 深灰边框
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(5)
+                    Padding = new Thickness(0), // 移除内边距避免溢出
+                    HasDropShadow = true,        // 启用阴影增强视觉效果
+                    // 设置更精确的样式模板防止背景溢出
+                    Template = CreateContextMenuTemplate()
                 };
 
-                var stackPanel = new StackPanel();
                 var types = new[] { "👥 面部", "👤 人物", "⚔️ 武器", "👕 服装", "🔧 修改", "📦 其他" };
                 
                 foreach (var type in types)
                 {
                     var typeText = type.Substring(2).Trim(); // 移除emoji前缀并清理空格
-                    var button = new Button
+                    var menuItem = new MenuItem
                     {
-                        Content = type,
+                        Header = type,
                         Background = mod.Type == typeText ? 
                             new SolidColorBrush(Color.FromRgb(16, 185, 129)) : 
                             Brushes.Transparent,
                         Foreground = Brushes.White,
-                        BorderThickness = new Thickness(0),
-                        Padding = new Thickness(10, 5, 10, 5),
-                        HorizontalAlignment = HorizontalAlignment.Stretch,
-                        HorizontalContentAlignment = HorizontalAlignment.Left,
                         FontWeight = mod.Type == typeText ? FontWeights.Bold : FontWeights.Normal,
-                        Cursor = Cursors.Hand
+                        Padding = new Thickness(12, 6, 12, 6), // 调整内边距
+                        Height = 32, // 固定高度确保一致性
+                        // 设置MenuItem样式防止背景溢出
+                        Template = CreateMenuItemTemplate()
                     };
                     
-                    // 鼠标悬停效果
-                    button.MouseEnter += (s, e) =>
-                    {
-                        if (mod.Type != typeText)
-                        {
-                            button.Background = new SolidColorBrush(Color.FromRgb(75, 85, 99));
-                        }
-                    };
-                    button.MouseLeave += (s, e) =>
-                    {
-                        if (mod.Type != typeText)
-                        {
-                            button.Background = Brushes.Transparent;
-                        }
-                    };
-                    
-                    button.Click += (s, e) =>
+                    menuItem.Click += (s, e) =>
                     {
                         try
                         {
@@ -2519,8 +2519,8 @@ namespace UEModManager
                             mod.Categories.Clear();
                             mod.Categories.Add(typeText);
                             
-                            // 关闭弹窗
-                            popup.IsOpen = false;
+                            // 关闭菜单
+                            contextMenu.IsOpen = false;
                             
                             // 刷新显示
                             RefreshModDisplay();
@@ -2534,54 +2534,138 @@ namespace UEModManager
                         }
                     };
                     
-                    stackPanel.Children.Add(button);
+                    contextMenu.Items.Add(menuItem);
                 }
 
-                border.Child = stackPanel;
-                popup.Child = border;
+                // 设置当前菜单引用
+                element.ContextMenu = contextMenu;
                 
-                // 添加弹窗关闭事件处理
-                popup.Closed += (s, e) => {
-                    Console.WriteLine("[DEBUG] 类型选择弹窗已关闭");
-                };
+                // 立即显示菜单
+                contextMenu.IsOpen = true;
                 
-                // 添加点击外部关闭功能
-                popup.MouseDown += (s, e) => {
-                    if (e.OriginalSource == popup)
-                    {
-                        popup.IsOpen = false;
-                    }
-                };
-                
-                // 添加失去焦点关闭功能（延迟执行避免立即关闭）
-                DispatcherTimer closeTimer = null;
-                popup.LostFocus += (s, e) => {
-                    closeTimer?.Stop();
-                    closeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-                    closeTimer.Tick += (sender, args) => {
-                        closeTimer.Stop();
-                        if (!popup.IsKeyboardFocusWithin && !popup.IsMouseOver)
-                        {
-                            popup.IsOpen = false;
-                        }
-                    };
-                    closeTimer.Start();
-                };
-                
-                // 鼠标进入时取消关闭
-                popup.MouseEnter += (s, e) => {
-                    closeTimer?.Stop();
-                };
-                
-                popup.IsOpen = true;
-                Console.WriteLine($"[DEBUG] 显示类型选择弹窗，当前MOD类型: {mod.Type}");
+                Console.WriteLine($"[DEBUG] 显示类型选择菜单，当前MOD类型: {mod.Type}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] 显示类型选择弹窗失败: {ex.Message}");
-                MessageBox.Show($"显示类型选择弹窗失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Console.WriteLine($"[ERROR] 显示类型选择菜单失败: {ex.Message}");
+                MessageBox.Show($"显示类型选择菜单失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        // 创建ContextMenu的控件模板，防止背景溢出
+        private ControlTemplate CreateContextMenuTemplate()
+        {
+            var template = new ControlTemplate(typeof(ContextMenu));
+            
+            // 创建Border作为根元素
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(42, 52, 65)));
+            border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(75, 85, 99)));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            border.SetValue(Border.PaddingProperty, new Thickness(2));
+            
+            // 创建StackPanel容纳MenuItem
+            var stackPanel = new FrameworkElementFactory(typeof(StackPanel));
+            stackPanel.SetValue(StackPanel.BackgroundProperty, Brushes.Transparent);
+            
+            // 创建ItemsPresenter显示菜单项
+            var itemsPresenter = new FrameworkElementFactory(typeof(ItemsPresenter));
+            stackPanel.AppendChild(itemsPresenter);
+            
+            border.AppendChild(stackPanel);
+            template.VisualTree = border;
+            
+            return template;
+        }
+
+        // 创建MenuItem的控件模板，防止背景溢出
+        private ControlTemplate CreateMenuItemTemplate()
+        {
+            var template = new ControlTemplate(typeof(MenuItem));
+            
+            // 创建Border作为MenuItem的容器
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "Border";
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(MenuItem.BackgroundProperty));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(0));
+            border.SetValue(Border.PaddingProperty, new TemplateBindingExtension(MenuItem.PaddingProperty));
+            
+            // 创建ContentPresenter显示Header内容
+            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            contentPresenter.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(MenuItem.HeaderProperty));
+            contentPresenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            contentPresenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+            
+            border.AppendChild(contentPresenter);
+            
+            // 添加鼠标悬停触发器
+            var trigger = new Trigger
+            {
+                Property = MenuItem.IsMouseOverProperty,
+                Value = true
+            };
+            trigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(55, 65, 81)), "Border"));
+            
+            template.Triggers.Add(trigger);
+            template.VisualTree = border;
+            
+            return template;
+        }
+
+        // 关闭当前类型选择菜单
+        private void CloseCurrentTypeSelectionPopup()
+        {
+            try
+            {
+                Console.WriteLine("[DEBUG] 开始关闭标签菜单");
+                
+                // 关闭所有可能打开的ContextMenu
+                CloseAllContextMenus();
+                
+                Console.WriteLine("[DEBUG] 标签菜单关闭完成");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 关闭菜单时出错: {ex.Message}");
+            }
+        }
+        
+        // 关闭所有ContextMenu
+        private void CloseAllContextMenus()
+        {
+            try
+            {
+                // 从主窗口查找所有元素的ContextMenu
+                CloseContextMenusInElement(this);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 关闭上下文菜单时出错: {ex.Message}");
+            }
+        }
+        
+        // 递归关闭元素及其子元素的ContextMenu
+        private void CloseContextMenusInElement(DependencyObject element)
+        {
+            if (element == null) return;
+            
+            // 如果是FrameworkElement且有ContextMenu，关闭它
+            if (element is FrameworkElement fe && fe.ContextMenu != null && fe.ContextMenu.IsOpen)
+            {
+                Console.WriteLine("[DEBUG] 关闭找到的ContextMenu");
+                fe.ContextMenu.IsOpen = false;
+            }
+            
+            // 递归处理子元素
+            int childCount = VisualTreeHelper.GetChildrenCount(element);
+            for (int i = 0; i < childCount; i++)
+            {
+                var child = VisualTreeHelper.GetChild(element, i);
+                CloseContextMenusInElement(child);
+            }
+        }
+
 
         private void ChangeModType_Click(object sender, RoutedEventArgs e)
         {
@@ -2906,6 +2990,32 @@ namespace UEModManager
         {
             Console.WriteLine($"[DEBUG] MainContentArea_PreviewMouseDown triggered. Source: {e.OriginalSource.GetType().Name}");
 
+            // 首先检查是否需要关闭标签菜单（ContextMenu会自动处理点击外部关闭）
+            // 这里只需要在点击其他地方时主动关闭
+            var clickedElement = e.OriginalSource as DependencyObject;
+            bool isClickOnTypeTag = false;
+            
+            // 检查是否点击在标签上（避免重复打开）
+            if (clickedElement != null)
+            {
+                var current = clickedElement;
+                while (current != null)
+                {
+                    if (current is TextBlock textBlock && textBlock.Name == "TypeTag")
+                    {
+                        isClickOnTypeTag = true;
+                        break;
+                    }
+                    current = VisualTreeHelper.GetParent(current);
+                }
+            }
+            
+            // 如果不是点击标签，关闭可能打开的菜单
+            if (!isClickOnTypeTag)
+            {
+                CloseCurrentTypeSelectionPopup();
+            }
+
             // 检查是否点击在MOD卡片上
             var source = e.OriginalSource as DependencyObject;
             bool isOnModCard = false;
@@ -2978,6 +3088,9 @@ namespace UEModManager
         private void CategoryArea_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             Console.WriteLine($"[DEBUG] CategoryArea_PreviewMouseDown triggered. Source: {e.OriginalSource.GetType().Name}");
+            
+            // 关闭可能打开的标签菜单
+            CloseCurrentTypeSelectionPopup();
             
             // 新增：如果点击的是按钮或其子元素，不清除选中
             if (e.OriginalSource is DependencyObject depObj)
@@ -4111,83 +4224,28 @@ namespace UEModManager
         {
             try
             {
-                var donationImagePath = IOPath.Combine(AppDomain.CurrentDomain.BaseDirectory, "捐赠.png");
+                // 使用嵌入式资源加载捐赠图片
+                var resourceUri = new Uri("pack://application:,,,/UEModManager;component/捐赠.png", UriKind.Absolute);
+                var imageSource = new BitmapImage(resourceUri);
                 
-                if (File.Exists(donationImagePath))
+                var image = new Image
                 {
-                    // 如果捐赠图片存在，显示图片
-                    var imageSource = new BitmapImage();
-                    imageSource.BeginInit();
-                    imageSource.UriSource = new Uri(donationImagePath, UriKind.Absolute);
-                    imageSource.DecodePixelWidth = 200;
-                    imageSource.DecodePixelHeight = 200;
-                    imageSource.EndInit();
-                    
-                    var image = new Image
-                    {
-                        Source = imageSource,
-                        Width = 200,
-                        Height = 200,
-                        Stretch = Stretch.Uniform
-                    };
-                    
-                    return new Border
-                    {
-                        Width = 200,
-                        Height = 200,
-                        CornerRadius = new CornerRadius(10),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Margin = new Thickness(0, 0, 0, 10),
-                        ClipToBounds = true,
-                        Child = image
-                    };
-                }
-                else
+                    Source = imageSource,
+                    Width = 200,
+                    Height = 200,
+                    Stretch = Stretch.Uniform
+                };
+                
+                return new Border
                 {
-                    // 如果图片不存在，显示占位符和提示
-                    return new Border
-                    {
-                        Width = 200,
-                        Height = 200,
-                        Background = new SolidColorBrush(Color.FromRgb(26, 52, 77)),
-                        CornerRadius = new CornerRadius(10),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Margin = new Thickness(0, 0, 0, 10),
-                        Child = new StackPanel
-                        {
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            Children =
-                            {
-                                new TextBlock
-                                {
-                                    Text = "💰",
-                                    FontSize = 32,
-                                    Foreground = new SolidColorBrush(Colors.White),
-                                    HorizontalAlignment = HorizontalAlignment.Center,
-                                    Margin = new Thickness(0, 0, 0, 10)
-                                },
-                                new TextBlock
-                                {
-                                    Text = "捐赠二维码",
-                                    FontSize = 14,
-                                    Foreground = new SolidColorBrush(Colors.White),
-                                    HorizontalAlignment = HorizontalAlignment.Center,
-                                    TextAlignment = TextAlignment.Center
-                                },
-                                new TextBlock
-                                {
-                                    Text = "(请放置 捐赠.png 到程序目录)",
-                                    FontSize = 10,
-                                    Foreground = new SolidColorBrush(Colors.LightGray),
-                                    HorizontalAlignment = HorizontalAlignment.Center,
-                                    TextAlignment = TextAlignment.Center,
-                                    Margin = new Thickness(0, 5, 0, 0)
-                                }
-                            }
-                        }
-                    };
-                }
+                    Width = 200,
+                    Height = 200,
+                    CornerRadius = new CornerRadius(10),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 10),
+                    ClipToBounds = true,
+                    Child = image
+                };
             }
             catch (Exception ex)
             {
@@ -4202,14 +4260,38 @@ namespace UEModManager
                     CornerRadius = new CornerRadius(10),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 0, 0, 10),
-                    Child = new TextBlock
+                    Child = new StackPanel
                     {
-                        Text = "💰\n捐赠二维码",
-                        FontSize = 16,
-                        Foreground = new SolidColorBrush(Colors.White),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                        TextAlignment = TextAlignment.Center
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = "💰",
+                                FontSize = 32,
+                                Foreground = new SolidColorBrush(Colors.White),
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                Margin = new Thickness(0, 0, 0, 10)
+                            },
+                            new TextBlock
+                            {
+                                Text = "捐赠二维码",
+                                FontSize = 14,
+                                Foreground = new SolidColorBrush(Colors.White),
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                TextAlignment = TextAlignment.Center
+                            },
+                            new TextBlock
+                            {
+                                Text = "(请将捐赠.png添加为资源)",
+                                FontSize = 10,
+                                Foreground = new SolidColorBrush(Colors.LightGray),
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                TextAlignment = TextAlignment.Center,
+                                Margin = new Thickness(0, 5, 0, 0)
+                            }
+                        }
                     }
                 };
             }
@@ -5405,8 +5487,13 @@ namespace UEModManager
                 {
                     ModDetailPreviewImage.Source = mod.PreviewImageSource;
                     ModDetailPreviewImage.Visibility = Visibility.Visible;
+                    
+                    // 重要：隐藏提示占位符，防止文字浮在图片上方
+                    if (PreviewPlaceholder != null)
+                        PreviewPlaceholder.Visibility = Visibility.Collapsed;
                     if (ModDetailIconContainer != null)
                         ModDetailIconContainer.Visibility = Visibility.Collapsed;
+                        
                     Console.WriteLine($"[DEBUG] 使用PreviewImageSource显示预览图: {mod.Name}");
                     return;
                 }
@@ -5430,6 +5517,10 @@ namespace UEModManager
                         
                         ModDetailPreviewImage.Source = bitmap;
                         ModDetailPreviewImage.Visibility = Visibility.Visible;
+                        
+                        // 重要：隐藏提示占位符，防止文字浮在图片上方
+                        if (PreviewPlaceholder != null)
+                            PreviewPlaceholder.Visibility = Visibility.Collapsed;
                         if (ModDetailIconContainer != null)
                             ModDetailIconContainer.Visibility = Visibility.Collapsed;
                             
@@ -5449,6 +5540,10 @@ namespace UEModManager
                     ModDetailPreviewImage.Source = null;
                     ModDetailPreviewImage.Visibility = Visibility.Collapsed;
                 }
+                
+                // 显示提示占位符
+                if (PreviewPlaceholder != null)
+                    PreviewPlaceholder.Visibility = Visibility.Visible;
                 if (ModDetailIconContainer != null)
                     ModDetailIconContainer.Visibility = Visibility.Visible;
             }
@@ -5461,6 +5556,10 @@ namespace UEModManager
                     ModDetailPreviewImage.Source = null;
                     ModDetailPreviewImage.Visibility = Visibility.Collapsed;
                 }
+                
+                // 显示提示占位符
+                if (PreviewPlaceholder != null)
+                    PreviewPlaceholder.Visibility = Visibility.Visible;
                 if (ModDetailIconContainer != null)
                     ModDetailIconContainer.Visibility = Visibility.Visible;
             }
@@ -5750,6 +5849,11 @@ namespace UEModManager
                 {
                     e.Effects = DragDropEffects.Move;
                 }
+                else if (e.Data.GetDataPresent("CategoryDragData"))
+                {
+                    // 支持分类重排序拖拽
+                    e.Effects = DragDropEffects.Move;
+                }
                 else
                 {
                     e.Effects = DragDropEffects.None;
@@ -5760,61 +5864,7 @@ namespace UEModManager
                 Console.WriteLine($"[ERROR] 分类列表拖拽进入事件失败: {ex.Message}");
                 e.Effects = DragDropEffects.None;
             }
-        }
-
-        /// <summary>
-        /// 分类列表拖拽悬停事件
-        /// </summary>
-        private void CategoryList_DragOver(object sender, DragEventArgs e)
-        {
-            try
-            {
-                if (e.Data.GetDataPresent("SelectedMods"))
-                {
-                    e.Effects = DragDropEffects.Move;
-                }
-                else
-                {
-                    e.Effects = DragDropEffects.None;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] 分类列表拖拽悬停事件失败: {ex.Message}");
-                e.Effects = DragDropEffects.None;
-            }
-        }
-
-        /// <summary>
-        /// 分类列表拖拽放置事件
-        /// </summary>
-        private void CategoryList_Drop(object sender, DragEventArgs e)
-        {
-            try
-            {
-                if (e.Data.GetDataPresent("SelectedMods"))
-                {
-                    var selectedMods = e.Data.GetData("SelectedMods") as List<Mod>;
-                    if (selectedMods?.Any() == true)
-                    {
-                        // 获取拖拽目标分类
-                        var targetCategory = GetDropTargetCategory(e);
-                        if (targetCategory != null)
-                        {
-                            // 移动MOD到目标分类
-                            MoveModsToCategory(selectedMods, targetCategory);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] 分类列表拖拽放置事件失败: {ex.Message}");
-                MessageBox.Show($"移动MOD到分类失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
+        }       
         /// 获取拖拽目标分类
         /// </summary>
         private object? GetDropTargetCategory(DragEventArgs e)
@@ -6102,113 +6152,17 @@ namespace UEModManager
         }
 
         // 支持捐赠相关事件
-        private Popup? donationPopup;
-
+        // 现在使用ToolTip来显示捐赠信息，不再需要Popup
         private void DonationText_MouseEnter(object sender, MouseEventArgs e)
         {
             try
             {
-                var textBlock = sender as TextBlock;
-                if (textBlock != null && donationPopup == null)
-                {
-                    // 显示提示文字
-                    if (DonationHintText != null)
-                    {
-                        DonationHintText.Visibility = Visibility.Visible;
-                    }
-                    
-                    // 创建弹出窗口显示捐赠二维码
-                    donationPopup = new Popup
-                    {
-                        PlacementTarget = textBlock,
-                        Placement = System.Windows.Controls.Primitives.PlacementMode.Top,
-                        AllowsTransparency = true,
-                        PopupAnimation = PopupAnimation.Fade,
-                        StaysOpen = false
-                    };
-
-                    var border = new Border
-                    {
-                        Background = new SolidColorBrush(Color.FromRgb(15, 27, 46)),
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(42, 52, 65)),
-                        BorderThickness = new Thickness(2),
-                        CornerRadius = new CornerRadius(12),
-                        Padding = new Thickness(15),
-                        Margin = new Thickness(0, 0, 0, 10)
-                    };
-
-                    var stackPanel = new StackPanel();
-
-                    var titleText = new TextBlock
-                    {
-                        Text = isEnglishMode ? "Support Development" : "支持开发",
-                        Foreground = Brushes.White,
-                        FontSize = 16,
-                        FontWeight = FontWeights.Bold,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Margin = new Thickness(0, 0, 0, 10)
-                    };
-                    stackPanel.Children.Add(titleText);
-
-                    // 尝试加载捐赠二维码图片
-                    var donationImagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "捐赠.png");
-                    if (File.Exists(donationImagePath))
-                    {
-                        var image = new Image
-                        {
-                            Source = new BitmapImage(new Uri(donationImagePath)),
-                            Width = 200,
-                            Height = 200,
-                            Margin = new Thickness(0, 0, 0, 10)
-                        };
-                        stackPanel.Children.Add(image);
-                    }
-                    else
-                    {
-                        var placeholderText = new TextBlock
-                        {
-                            Text = isEnglishMode ? "Donation QR Code\n(File: 捐赠.png not found)" : "捐赠二维码\n(文件：捐赠.png 未找到)",
-                            Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
-                            FontSize = 14,
-                            TextAlignment = TextAlignment.Center,
-                            Width = 200,
-                            Height = 200,
-                            Background = new SolidColorBrush(Color.FromRgb(75, 85, 99)),
-                            Padding = new Thickness(10),
-                            Margin = new Thickness(0, 0, 0, 10)
-                        };
-                        stackPanel.Children.Add(placeholderText);
-                    }
-
-                    var donationText = new TextBlock
-                    {
-                        Text = "如果对你有帮助，可以请我喝一杯蜜雪冰城",
-                        Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
-                        FontSize = 12,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        TextWrapping = TextWrapping.Wrap,
-                        TextAlignment = TextAlignment.Center,
-                        Margin = new Thickness(0, 0, 0, 10)
-                    };
-                    stackPanel.Children.Add(donationText);
-
-                    var hintText = new TextBlock
-                    {
-                        Text = isEnglishMode ? "Hover to view, click for more info" : "悬停查看，点击了解更多",
-                        Foreground = new SolidColorBrush(Color.FromRgb(156, 163, 175)),
-                        FontSize = 12,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    };
-                    stackPanel.Children.Add(hintText);
-
-                    border.Child = stackPanel;
-                    donationPopup.Child = border;
-                    donationPopup.IsOpen = true;
-                }
+                // 鼠标悬浮效果通过按钮样式和ToolTip自动处理
+                Console.WriteLine("[DEBUG] 鼠标悬浮在捐赠按钮上");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"显示捐赠提示失败: {ex.Message}");
+                Console.WriteLine($"捐赠按钮鼠标悬浮处理失败: {ex.Message}");
             }
         }
 
@@ -6216,21 +6170,12 @@ namespace UEModManager
         {
             try
             {
-                if (donationPopup != null)
-                {
-                    donationPopup.IsOpen = false;
-                    donationPopup = null;
-                }
-                
-                // 隐藏提示文字
-                if (DonationHintText != null)
-                {
-                    DonationHintText.Visibility = Visibility.Collapsed;
-                }
+                // 鼠标离开效果通过按钮样式自动处理
+                Console.WriteLine("[DEBUG] 鼠标离开捐赠按钮");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"隐藏捐赠提示失败: {ex.Message}");
+                Console.WriteLine($"捐赠按钮鼠标离开处理失败: {ex.Message}");
             }
         }
 
@@ -6606,14 +6551,16 @@ namespace UEModManager
                     var listBoxItem = FindParent<ListBoxItem>(border);
                     if (listBoxItem?.DataContext != null)
                     {
-                        _draggedCategory = listBoxItem.DataContext;
+                        var cat = listBoxItem.DataContext as Category;
+                        if (cat == null) return;
+                        _draggedCategory = cat;
                         _startPoint = e.GetPosition(CategoryList);
                         _isDragging = true;
                         
                         // 捕获鼠标，开始拖拽
                         border.CaptureMouse();
                         
-                        Console.WriteLine($"[DEBUG] 开始拖拽分类: {GetCategoryName(_draggedCategory)}");
+                        Console.WriteLine($"[DEBUG] 开始拖拽分类: {cat.Name}");
                     }
                 }
             }
@@ -6630,8 +6577,20 @@ namespace UEModManager
         {
             if (sender is Border border && border.Child is TextBlock textBlock)
             {
-                // 改变图标颜色为高亮状态
-                textBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+                // 获取对应的分类项，检查是否是默认分类
+                var listBoxItem = FindParent<ListBoxItem>(border);
+                if (listBoxItem?.DataContext != null)
+                {
+                    var categoryName = GetCategoryName(listBoxItem.DataContext);
+                    
+                    // 只有非默认分类才显示悬停效果
+                    if (categoryName != "全部" && categoryName != "已启用" && categoryName != "已禁用")
+                    {
+                        // 改变图标颜色为高亮状态并显示四个方向箭头光标
+                        textBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00D4AA"));
+                        border.Cursor = Cursors.SizeAll;
+                    }
+                }
             }
         }
         
@@ -6644,6 +6603,7 @@ namespace UEModManager
             {
                 // 恢复图标颜色为正常状态
                 textBlock.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6B7280"));
+                border.Cursor = Cursors.Arrow;
             }
         }
         
@@ -6658,25 +6618,8 @@ namespace UEModManager
                 UEModManager.Core.Models.CategoryItem categoryItem => categoryItem.Name ?? "",
                 _ => ""
             };
-        }
-        
-        /// <summary>
-        /// 获取指定位置的分类项
-        /// </summary>
-        private object? GetCategoryItemAtPosition(Point position)
-        {
-            var element = CategoryList.InputHitTest(position) as DependencyObject;
-            while (element != null)
-            {
-                if (element is ListBoxItem listBoxItem)
-                {
-                    return listBoxItem.DataContext;
-                }
-                element = VisualTreeHelper.GetParent(element);
-            }
-            return null;
-        }
-        
+        }      
+      
         /// <summary>
         /// 重新排序分类项
         /// </summary>
@@ -6684,30 +6627,69 @@ namespace UEModManager
         {
             try
             {
-                if (CategoryList?.ItemsSource is ObservableCollection<object> categories)
+                // 支持多种类型的分类集合
+                if (CategoryList?.ItemsSource is ObservableCollection<Category> categories)
                 {
-                    int draggedIndex = categories.IndexOf(draggedCategory);
-                    int targetIndex = categories.IndexOf(targetCategory);
-                    
-                    if (draggedIndex != -1 && targetIndex != -1 && draggedIndex != targetIndex)
+                    // 处理Category类型的集合
+                    if (draggedCategory is Category draggedCat && targetCategory is Category targetCat)
                     {
-                        // 移除拖拽的项目
-                        categories.RemoveAt(draggedIndex);
+                        int draggedIndex = categories.IndexOf(draggedCat);
+                        int targetIndex = categories.IndexOf(targetCat);
                         
-                        // 重新计算目标索引（因为移除了一个项目）
-                        if (draggedIndex < targetIndex)
+                        if (draggedIndex != -1 && targetIndex != -1 && draggedIndex != targetIndex)
                         {
-                            targetIndex--;
+                            // 移除拖拽的项目
+                            categories.RemoveAt(draggedIndex);
+                            
+                            // 重新计算目标索引（因为移除了一个项目）
+                            if (draggedIndex < targetIndex)
+                            {
+                                targetIndex--;
+                            }
+                            
+                            // 在目标位置插入
+                            categories.Insert(targetIndex, draggedCat);
+                            
+                            // 保持选中状态
+                            CategoryList.SelectedItem = draggedCat;
+                            
+                            Console.WriteLine($"[DEBUG] 分类重新排序: {GetCategoryName(draggedCategory)} 移动到 {GetCategoryName(targetCategory)} 位置");
                         }
-                        
-                        // 在目标位置插入
-                        categories.Insert(targetIndex, draggedCategory);
-                        
-                        // 保持选中状态
-                        CategoryList.SelectedItem = draggedCategory;
-                        
-                        Console.WriteLine($"[DEBUG] 分类重新排序: {GetCategoryName(draggedCategory)} 移动到 {GetCategoryName(targetCategory)} 位置");
                     }
+                }
+                else if (CategoryList?.ItemsSource is ObservableCollection<UEModManager.Core.Models.CategoryItem> categoryItems)
+                {
+                    // 处理CategoryItem类型的集合
+                    if (draggedCategory is UEModManager.Core.Models.CategoryItem draggedItem && 
+                        targetCategory is UEModManager.Core.Models.CategoryItem targetItem)
+                    {
+                        int draggedIndex = categoryItems.IndexOf(draggedItem);
+                        int targetIndex = categoryItems.IndexOf(targetItem);
+                        
+                        if (draggedIndex != -1 && targetIndex != -1 && draggedIndex != targetIndex)
+                        {
+                            // 移除拖拽的项目
+                            categoryItems.RemoveAt(draggedIndex);
+                            
+                            // 重新计算目标索引（因为移除了一个项目）
+                            if (draggedIndex < targetIndex)
+                            {
+                                targetIndex--;
+                            }
+                            
+                            // 在目标位置插入
+                            categoryItems.Insert(targetIndex, draggedItem);
+                            
+                            // 保持选中状态
+                            CategoryList.SelectedItem = draggedItem;
+                            
+                            Console.WriteLine($"[DEBUG] 分类重新排序: {GetCategoryName(draggedCategory)} 移动到 {GetCategoryName(targetCategory)} 位置");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[ERROR] 不支持的ItemsSource类型: {CategoryList?.ItemsSource?.GetType()}");
                 }
             }
             catch (Exception ex)
@@ -6717,7 +6699,7 @@ namespace UEModManager
         }
 
         // Window加载事件
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             // 初始化配置
             LoadConfiguration();
@@ -6727,6 +6709,19 @@ namespace UEModManager
             
             // 检查和恢复游戏配置
             CheckAndRestoreGameConfiguration();
+            
+            // 为关闭按钮添加事件处理
+            Console.WriteLine("[DEBUG] 尝试查找并注册关闭按钮事件...");
+            var closeButton = Template.FindName("CloseButton", this) as Button;
+            if (closeButton != null)
+            {
+                closeButton.Click += CloseButton_Click;
+                Console.WriteLine("[DEBUG] 成功注册关闭按钮事件处理");
+            }
+            else
+            {
+                Console.WriteLine("[ERROR] 无法找到关闭按钮！");
+            }
         }
         
         // 添加视图切换事件处理程序
@@ -6776,17 +6771,28 @@ namespace UEModManager
             {
                 Point currentPosition = e.GetPosition(CategoryList);
                 
-                // 检查鼠标是否移动了足够的距离
+                // 检查鼠标是否移动了足够的距离开始实际拖拽
                 Vector diff = _startPoint - currentPosition;
                 if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
                     Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
                 {
-                    // 获取鼠标位置下的目标分类
-                    var targetCategory = GetCategoryItemAtPosition(currentPosition);
-                    if (targetCategory != null && targetCategory != _draggedCategory)
+                    try
                     {
-                        // 重新排序
-                        ReorderCategories(_draggedCategory, targetCategory);
+                        // 启动WPF拖拽操作
+                        var dragData = new DataObject("CategoryDragData", _draggedCategory);
+                        DragDrop.DoDragDrop(CategoryList, dragData, DragDropEffects.Move);
+                        
+                        Console.WriteLine($"[DEBUG] 启动拖拽操作: {GetCategoryName(_draggedCategory)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERROR] 拖拽操作失败: {ex.Message}");
+                    }
+                    finally
+                    {
+                        // 重置拖拽状态
+                        _isDragging = false;
+                        _draggedCategory = null;
                     }
                 }
             }
@@ -6837,6 +6843,134 @@ namespace UEModManager
             // 现在卡片视图直接使用主ScrollViewer，不需要特殊处理
             // 让事件正常冒泡到主ScrollViewer即可
         }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            Console.WriteLine("[DEBUG] 关闭按钮被点击，正在关闭窗口...");
+            this.Close();
+        }
+
+        // 全局鼠标点击事件处理，用于关闭标签菜单  
+        private void MainWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                Console.WriteLine("[DEBUG] 全局点击检测，尝试关闭所有打开的标签菜单");
+                
+                // 简单地关闭所有可能打开的ContextMenu
+                CloseCurrentTypeSelectionPopup();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 处理全局点击事件时出错: {ex.Message}");
+            }
+        }
+
+        // 拖拽排序相关
+        private Point _dragStartPoint;
+        private Category? _draggedCategory;
+        private DragAdorner? _dragAdorner;
+        private Point _dragStartPointOnItem;
+
+        private void DragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var border = sender as Border;
+            if (border == null) return;
+            var listBoxItem = FindParent<ListBoxItem>(border);
+            if (listBoxItem == null) return;
+            var category = listBoxItem.DataContext as Category;
+
+            if (category == null || IsDefaultCategory(category)) return;
+
+            // 1. 为被拖拽的项创建一张位图快照
+            var bmp = new RenderTargetBitmap((int)listBoxItem.ActualWidth, (int)listBoxItem.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(listBoxItem);
+            bmp.Freeze(); 
+
+            // 2. 获取Adorner层
+            var adornerLayer = AdornerLayer.GetAdornerLayer(CategoryList);
+            if (adornerLayer == null) return;
+
+            // 3. 创建并添加使用位图快照的Adorner
+            _dragAdorner = new DragAdorner(CategoryList, bmp, listBoxItem.RenderSize);
+            adornerLayer.Add(_dragAdorner);
+            
+            // 4. 更新Adorner的初始位置，使其跟随鼠标
+            _dragStartPointOnItem = e.GetPosition(listBoxItem);
+            Point initialPosition = e.GetPosition(CategoryList);
+            _dragAdorner.UpdatePosition(new Point(initialPosition.X - _dragStartPointOnItem.X, initialPosition.Y - _dragStartPointOnItem.Y));
+
+            // 5. 现在可以安全地隐藏原始项
+            listBoxItem.Visibility = Visibility.Hidden;
+            
+            DragDrop.DoDragDrop(listBoxItem, category, DragDropEffects.Move);
+
+            // ----- 拖拽结束后执行清理 -----
+            
+            if (_dragAdorner != null)
+            {
+                adornerLayer.Remove(_dragAdorner);
+                _dragAdorner = null;
+            }
+
+            listBoxItem.Visibility = Visibility.Visible;
+            
+            e.Handled = true;
+        }
+
+        private void CategoryList_DragOver(object sender, DragEventArgs e)
+        {
+            if (_dragAdorner != null)
+            {
+                Point currentPosition = e.GetPosition(CategoryList);
+                // 更新Adorner的位置，减去起始点偏移，使拖拽更自然
+                _dragAdorner.UpdatePosition(new Point(currentPosition.X - _dragStartPointOnItem.X, currentPosition.Y - _dragStartPointOnItem.Y));
+            }
+
+            var target = GetCategoryItemAtPosition(e.GetPosition(CategoryList)) as Category;
+            var dragged = e.Data.GetData(typeof(Category)) as Category;
+            
+            // 默认不允许放置
+            e.Effects = DragDropEffects.None;
+
+            if (target != null && dragged != null && target != dragged && !IsDefaultCategory(target))
+            {
+                // 仅当目标有效时，才允许移动
+                e.Effects = DragDropEffects.Move;
+            }
+
+            e.Handled = true;
+        }
+
+        private void CategoryList_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(typeof(Category))) return;
+            var dragged = e.Data.GetData(typeof(Category)) as Category;
+            var target = GetCategoryItemAtPosition(e.GetPosition(CategoryList)) as Category;
+            if (dragged == null || target == null || dragged == target) return;
+            if (IsDefaultCategory(target)) return;
+            int oldIndex = categories.IndexOf(dragged);
+            int newIndex = categories.IndexOf(target);
+            if (oldIndex < 0 || newIndex < 0 || oldIndex == newIndex) return;
+            categories.Move(oldIndex, newIndex);
+        }
+
+        private object? GetCategoryItemAtPosition(Point position)
+        {
+            var element = CategoryList.InputHitTest(position) as DependencyObject;
+            while (element != null && !(element is ListBoxItem))
+            {
+                element = VisualTreeHelper.GetParent(element);
+            }
+            return (element as ListBoxItem)?.DataContext;
+        }
+
+        private bool IsDefaultCategory(Category category)
+        {
+            return category.Name == "全部" || category.Name == "已启用" || category.Name == "已禁用";
+        }
+
+       
     }
 
     public class Game
@@ -7014,7 +7148,10 @@ namespace UEModManager
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return value is Category ? Visibility.Visible : Visibility.Collapsed;
+            Console.WriteLine($"[DEBUG] CategoryTypeVisibilityConverter: value={value}, type={value?.GetType()?.Name}");
+            var result = value is Category ? Visibility.Visible : Visibility.Collapsed;
+            Console.WriteLine($"[DEBUG] CategoryTypeVisibilityConverter: result={result}");
+            return result;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -7027,7 +7164,10 @@ namespace UEModManager
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return value is UEModManager.Core.Models.CategoryItem ? Visibility.Visible : Visibility.Collapsed;
+            Console.WriteLine($"[DEBUG] CategoryItemTypeVisibilityConverter: value={value}, type={value?.GetType()?.Name}");
+            var result = value is UEModManager.Core.Models.CategoryItem ? Visibility.Visible : Visibility.Collapsed;
+            Console.WriteLine($"[DEBUG] CategoryItemTypeVisibilityConverter: result={result}");
+            return result;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

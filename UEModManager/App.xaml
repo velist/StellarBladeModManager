@@ -42,10 +42,10 @@
                 </Setter>
             </Style>
             
-            <Style x:Key="CloseWindowButton" TargetType="{x:Type Button}" BasedOn="{StaticResource WindowControlButton}">
+            <Style x:Key="CloseWindowButton" TargetType="Button" BasedOn="{StaticResource WindowControlButton}">
                 <Setter Property="Template">
                     <Setter.Value>
-                        <ControlTemplate TargetType="{x:Type Button}">
+                        <ControlTemplate TargetType="Button">
                             <Border x:Name="border" Background="{TemplateBinding Background}">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
