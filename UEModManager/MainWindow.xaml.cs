@@ -100,7 +100,25 @@ namespace UEModManager
             CategoryList.Drop += CategoryList_Drop;
             CategoryList.DragOver += CategoryList_DragOver;
             
+<<<<<<< HEAD
             Console.WriteLine("MainWindow 初始化完成");
+=======
+            // Console.WriteLine("MainWindow 初始化完成");
+            categories.Add(new Category { Name = "测试分类", Count = 99 });
+
+            // 强制用代码设置ItemTemplate为红底白字TEST
+            var template = new DataTemplate();
+            var factory = new FrameworkElementFactory(typeof(Border));
+            factory.SetValue(Border.BackgroundProperty, System.Windows.Media.Brushes.Red);
+            factory.SetValue(Border.PaddingProperty, new System.Windows.Thickness(10));
+            var textFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.TextBlock));
+            textFactory.SetValue(System.Windows.Controls.TextBlock.TextProperty, "TEST");
+            textFactory.SetValue(System.Windows.Controls.TextBlock.FontSizeProperty, 30.0);
+            textFactory.SetValue(System.Windows.Controls.TextBlock.ForegroundProperty, System.Windows.Media.Brushes.White);
+            factory.AppendChild(textFactory);
+            template.VisualTree = factory;
+            CategoryList.ItemTemplate = template;
+>>>>>>> be75809732c73e3e8f1d689a929b2b4f1889cd43
         }
 
         // Win32 API 用于分配控制台窗口
@@ -7376,7 +7394,6 @@ namespace UEModManager
 
         // 添加批量操作标志
         private bool IsInBatchOperation = false;
-
     }
 
     public class Game

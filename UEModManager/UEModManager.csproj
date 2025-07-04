@@ -32,4 +32,8 @@
     <Resource Include="Resources\**\*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="捐赠.png" />
+  </ItemGroup>
+
 </Project> 
