@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>图标.ico</ApplicationIcon>
+    <SuppressConsoleWindowForNativeReferences>true</SuppressConsoleWindowForNativeReferences>
 
     <AssemblyTitle>虚幻引擎MOD管理器</AssemblyTitle>
     <AssemblyDescription>专业的虚幻引擎游戏MOD管理工具</AssemblyDescription>
@@ -34,6 +36,13 @@
 
   <ItemGroup>
     <Resource Include="捐赠.png" />
+    <Resource Include="图标.ico" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Page Update="Views\AddCustomGameDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
 
 </Project> 

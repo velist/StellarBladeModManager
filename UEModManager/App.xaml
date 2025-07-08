@@ -68,6 +68,8 @@
                 <Setter Property="BorderBrush" Value="#1A2332"/>
                 <Setter Property="BorderThickness" Value="1"/>
                 <Setter Property="ResizeMode" Value="CanResizeWithGrip"/>
+                <Setter Property="UseLayoutRounding" Value="True"/>
+                <Setter Property="SnapsToDevicePixels" Value="True"/>
                 <Setter Property="shell:WindowChrome.WindowChrome">
                     <Setter.Value>
                         <shell:WindowChrome CaptionHeight="35" 
@@ -82,7 +84,9 @@
                         <ControlTemplate TargetType="{x:Type Window}">
                             <Border BorderBrush="{TemplateBinding BorderBrush}" 
                                     BorderThickness="{TemplateBinding BorderThickness}"
-                                    Background="{TemplateBinding Background}">
+                                    Background="{TemplateBinding Background}"
+                                    UseLayoutRounding="True"
+                                    SnapsToDevicePixels="True">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="35"/>
@@ -98,7 +102,7 @@
                                             </Grid.ColumnDefinitions>
                                             
                                             <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
-                                                <TextBlock Text="📦" FontSize="16" Margin="0,0,8,0" Foreground="#F1F5F9"/>
+                                                <Image Source="图标.ico" Width="16" Height="16" Margin="0,0,8,0"/>
                                                 <TextBlock Text="{TemplateBinding Title}" Foreground="#F1F5F9" FontSize="14" 
                                                            FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             </StackPanel>

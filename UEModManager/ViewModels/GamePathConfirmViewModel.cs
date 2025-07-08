@@ -397,52 +397,14 @@ namespace UEModManager.ViewModels
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize,
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0B1426")),
-                WindowStyle = WindowStyle.None,
+                WindowStyle = WindowStyle.SingleBorderWindow,
                 BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
                 BorderThickness = new Thickness(1)
             };
 
             var mainGrid = new Grid();
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 按钮
-
-            // 自定义标题栏
-            var titleBar = new Border
-            {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A2332")),
-                Padding = new Thickness(15),
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2A3441")),
-                BorderThickness = new Thickness(0, 0, 0, 1)
-            };
-
-            var titleGrid = new Grid();
-            var titleText = new TextBlock
-            {
-                Text = title,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
-                FontWeight = FontWeights.Bold,
-                FontSize = 14,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            var closeButton = new Button
-            {
-                Content = "✕",
-                Width = 30,
-                Height = 30,
-                Background = Brushes.Transparent,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9CA3AF")),
-                BorderThickness = new Thickness(0),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                FontSize = 14,
-                Cursor = Cursors.Hand
-            };
-
-            titleGrid.Children.Add(titleText);
-            titleGrid.Children.Add(closeButton);
-            titleBar.Child = titleGrid;
-            Grid.SetRow(titleBar, 0);
 
             // 内容区域
             var contentGrid = new Grid();
@@ -482,15 +444,14 @@ namespace UEModManager.ViewModels
 
             contentGrid.Children.Add(iconBlock);
             contentGrid.Children.Add(messageText);
-            Grid.SetRow(contentGrid, 1);
+            Grid.SetRow(contentGrid, 0);
 
             // 按钮区域
             var buttonPanel = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(20, 0, 20, 20),
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F1B2E"))
+                Margin = new Thickness(20, 0, 20, 20)
             };
 
             MessageBoxResult result = MessageBoxResult.None;
@@ -535,10 +496,7 @@ namespace UEModManager.ViewModels
                     break;
             }
 
-            Grid.SetRow(buttonPanel, 2);
-
-            // 关闭按钮事件
-            closeButton.Click += (s, e) => { result = MessageBoxResult.Cancel; messageWindow.Close(); };
+            Grid.SetRow(buttonPanel, 1);
 
             // 添加键盘支持
             messageWindow.KeyDown += (s, e) =>
@@ -555,7 +513,6 @@ namespace UEModManager.ViewModels
                 }
             };
 
-            mainGrid.Children.Add(titleBar);
             mainGrid.Children.Add(contentGrid);
             mainGrid.Children.Add(buttonPanel);
 

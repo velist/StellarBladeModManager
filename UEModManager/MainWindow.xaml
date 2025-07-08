@@ -10,6 +10,8 @@
         Background="#0B1426"
         Style="{StaticResource DarkFlatWindow}"
         PreviewMouseDown="MainWindow_PreviewMouseDown"
+        SourceInitialized="Window_SourceInitialized"
+        Icon="图标.ico"
         >
     
     <Window.Resources>
@@ -638,10 +640,9 @@
                 
                 <!-- 左侧：品牌和游戏选择器 -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                    <!-- Logo和标题 - 渐变色无背景 -->
+                    <!-- 标题 - 渐变色无背景，删除图标 -->
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock FontSize="18" Text="📦" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="虚幻引擎MOD管理器" FontSize="16" FontWeight="Bold" VerticalAlignment="Center">
+                        <TextBlock Text="轻松管理你的游戏MOD" FontSize="16" FontWeight="Bold" VerticalAlignment="Center">
                             <TextBlock.Foreground>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                     <GradientStop Color="#00D4AA" Offset="0"/>
@@ -667,7 +668,7 @@
                         <ComboBoxItem Content="剑星 (Stellar Blade)"/>
                         <ComboBoxItem Content="黑神话·悟空"/>
                         <ComboBoxItem Content="光与影：33号远征队"/>
-                        <ComboBoxItem Content="其他虚幻引擎游戏"/>
+                        <ComboBoxItem Content="添加新游戏..." Foreground="#FBBF24"/>
                         <ComboBox.Style>
                             <Style TargetType="ComboBox">
                                 <Setter Property="Template">
@@ -824,6 +825,11 @@
                                             <TextBlock Text="📁" FontSize="12" Foreground="#FBBF24"/>
                                         </MenuItem.Icon>
                                     </MenuItem>
+                                    <MenuItem Header="使用说明" Click="UserManualMenuItem_Click" Style="{StaticResource DarkMenuItem}">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="📖" FontSize="12" Foreground="#10B981"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
                                     <MenuItem Header="切换英文 (Language)" Click="LanguageMenuItem_Click" Style="{StaticResource DarkMenuItem}">
                                         <MenuItem.Icon>
                                             <TextBlock Text="🌐" FontSize="12" Foreground="#10B981"/>
@@ -906,15 +912,95 @@
                         
                         <!-- 操作按钮行 -->
                         <StackPanel Orientation="Horizontal">
-                            <Button Content="新增" Background="Transparent" Foreground="White" 
-                                    BorderBrush="White" BorderThickness="1" Padding="12,6" FontSize="12" Margin="0,0,8,0"
-                                    Click="AddCategoryButton_Click" ToolTip="添加新分类"/>
-                            <Button Content="删除" Background="Transparent" Foreground="White" 
-                                    BorderBrush="White" BorderThickness="1" Padding="12,6" FontSize="12" Margin="0,0,8,0"
-                                    Click="DeleteCategoryButton_Click" ToolTip="删除分类"/>
-                            <Button Content="重命名" Background="Transparent" Foreground="White" 
-                                    BorderBrush="White" BorderThickness="1" Padding="12,6" FontSize="12"
-                                    Click="RenameCategoryButton_Click" ToolTip="重命名分类"/>
+                            <Button Content="新增" 
+                                    Background="Transparent" 
+                                    Foreground="White" 
+                                    BorderBrush="White" 
+                                    BorderThickness="1" 
+                                    Padding="12,6" 
+                                    FontSize="12" 
+                                    Margin="0,0,8,0"
+                                    Click="AddCategoryButton_Click" 
+                                    ToolTip="添加新分类">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="border" 
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="border" Property="Background" Value="#FBBF24"/>
+                                                <Setter TargetName="border" Property="BorderBrush" Value="#FBBF24"/>
+                                                <Setter Property="Foreground" Value="#1E2A3A"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <Button Content="删除" 
+                                    Background="Transparent" 
+                                    Foreground="White" 
+                                    BorderBrush="White" 
+                                    BorderThickness="1" 
+                                    Padding="12,6" 
+                                    FontSize="12" 
+                                    Margin="0,0,8,0"
+                                    Click="DeleteCategoryButton_Click" 
+                                    ToolTip="删除分类">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="border" 
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="border" Property="Background" Value="#FBBF24"/>
+                                                <Setter TargetName="border" Property="BorderBrush" Value="#FBBF24"/>
+                                                <Setter Property="Foreground" Value="#1E2A3A"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <Button Content="重命名" 
+                                    Background="Transparent" 
+                                    Foreground="White" 
+                                    BorderBrush="White" 
+                                    BorderThickness="1" 
+                                    Padding="12,6" 
+                                    FontSize="12"
+                                    Click="RenameCategoryButton_Click" 
+                                    ToolTip="重命名分类">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="border" 
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="border" Property="Background" Value="#FBBF24"/>
+                                                <Setter TargetName="border" Property="BorderBrush" Value="#FBBF24"/>
+                                                <Setter Property="Foreground" Value="#1E2A3A"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                         </StackPanel>
                         
                     </StackPanel>
@@ -1236,7 +1322,44 @@
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.PanningMode="VerticalOnly" ScrollViewer.CanContentScroll="False"
                           PreviewMouseWheel="ModsListView_PreviewMouseWheel"
+                          SelectionChanged="ModsListView_SelectionChanged"
                           SelectionMode="Extended">
+                    <ListView.ContextMenu>
+                        <ContextMenu Style="{StaticResource DarkContextMenu}" Opened="ModContextMenu_Opened">
+                            <MenuItem Header="启用" Name="EnableModMenuItem" Style="{StaticResource DarkMenuItem}" Click="EnableModMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="✅" FontSize="12" Foreground="#10B981" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="禁用" Name="DisableModMenuItem" Style="{StaticResource DarkMenuItem}" Click="DisableModMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="⛔" FontSize="12" Foreground="#EF4444" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator Style="{StaticResource DarkSeparator}" />
+                            <MenuItem Header="编辑" Name="RenameModMenuItem" Style="{StaticResource DarkMenuItem}" Click="RenameModMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="✏️" FontSize="12" Foreground="#9CA3AF" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="更换预览图" Name="ChangePreviewMenuItem" Style="{StaticResource DarkMenuItem}" Click="ChangePreviewMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="🖼" FontSize="12" Foreground="#9CA3AF" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="移动到分类" Name="MoveToCategoryMenuItem" Style="{StaticResource DarkMenuItem}">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="📂" FontSize="12" Foreground="#9CA3AF" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator Style="{StaticResource DarkSeparator}" />
+                            <MenuItem Header="删除" Name="DeleteModMenuItem" Style="{StaticResource DarkMenuItem}" Click="DeleteModMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="🗑" FontSize="12" Foreground="#EF4444" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
                     
                     <!-- 列表视图样式 -->
                     <ListView.ItemContainerStyle>
